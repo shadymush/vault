@@ -1,6 +1,7 @@
 const app = document.querySelector("#app");
 const storageKey = "vault-demo-profile";
 const stateKey = "vault-demo-state";
+const sessionKey = "vault-demo-session";
 
 const icons = {
   bolt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m13 2-3 9h8L9 22l3-9H4l9-11Z"/></svg>',
@@ -25,10 +26,27 @@ const icons = {
   sparkle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2L12 3Z"/><path d="m19 14 1 2.5 2.5 1-2.5 1L19 21l-1-2.5-2.5-1 2.5-1L19 14Z"/></svg>',
   chevron: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>',
   close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>',
+  sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></svg>',
+  moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.9 13A9 9 0 0 1 11 3.1 9 9 0 1 0 20.9 13Z"/></svg>',
 };
 
 function brand() {
-  return `<a class="brand" href="#/" aria-label="Vault home"><span class="brand-mark">V</span><span>VAULT</span></a>`;
+  return `<a class="brand" href="#/" aria-label="Vault home"><span class="brand-mark"><svg viewBox="0 0 40 40" aria-hidden="true"><path class="brand-v" d="M9 8 19 32 29 8"/><path class="brand-bolt" d="m22 13-7 11h6l-2 7 8-12h-6l1-6Z"/></svg></span><span>VAULT</span></a>`;
+}
+
+function themeToggle() {
+  return `<button class="theme-toggle" type="button" data-action="theme-toggle" aria-label="Switch to light mode" title="Switch to light mode">${icons.sun}</button>`;
+}
+
+function applyTheme(theme) {
+  const light = theme === "light";
+  document.documentElement.dataset.theme = light ? "light" : "dark";
+  document.querySelectorAll("[data-action='theme-toggle']").forEach((button) => {
+    const label = light ? "Switch to dark mode" : "Switch to light mode";
+    button.setAttribute("aria-label", label);
+    button.title = label;
+    button.innerHTML = light ? icons.moon : icons.sun;
+  });
 }
 
 function footer() {
@@ -40,6 +58,7 @@ function renderLanding() {
     <header class="site-header">
       ${brand()}
       <nav class="header-actions" aria-label="Main navigation">
+        ${themeToggle()}
         <a class="header-link" href="#/login">Sign In</a>
         <a class="header-cta" href="#/register">Get Started</a>
       </nav>
@@ -91,6 +110,7 @@ function renderAuth(mode) {
   app.innerHTML = `
     <main class="auth-shell">
       <a class="auth-back" href="#/">← Back to Vault</a>
+      ${themeToggle()}
       <section class="auth-card" aria-labelledby="auth-title">
         <div class="auth-brand">${brand()}</div>
         <h1 class="auth-title" id="auth-title">${registering ? "Create Vault Account" : "Welcome Back"}</h1>
@@ -121,7 +141,7 @@ function renderAuth(mode) {
           <button class="button button-primary auth-submit" type="submit">${registering ? "Continue to Vault" : "Sign In"}</button>
         </form>
         <p class="auth-switch">${registering ? 'Already have an account? <a class="text-link" href="#/login">Login</a>' : 'Don’t have an account? <a class="text-link" href="#/register">Register</a>'}</p>
-        <p class="demo-note">Demo experience only. No real account is created, and passwords are never saved.</p>
+        <p class="demo-note">Demo account stored in this browser only. Your password is never stored in plain text. This is not secure production authentication.</p>
       </section>
     </main>`;
 
@@ -135,43 +155,86 @@ function renderAuth(mode) {
     toggle.setAttribute("aria-pressed", String(show));
     toggle.innerHTML = show ? icons.eyeOff : icons.eye;
   });
-  form.addEventListener("submit", (event) => {
+  form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const message = form.querySelector(".form-message");
+    const submit = form.querySelector("[type='submit']");
     message.classList.remove("visible");
     if (!form.reportValidity()) return;
-    if (registering) {
+    submit.disabled = true;
+    try {
       const data = new FormData(form);
-      const name = String(data.get("name")).trim();
-      if (name.length < 2) {
-        showFormError(message, "Please enter your full name.");
-        return;
-      }
-      try {
+      const passwordValue = String(data.get("password"));
+      if (registering) {
+        const name = String(data.get("name")).trim();
+        if (name.length < 2) {
+          showFormError(message, "Please enter your full name.");
+          return;
+        }
+        const salt = createPasswordSalt();
+        const passwordHash = await hashPassword(passwordValue, salt);
         localStorage.setItem(storageKey, JSON.stringify({
           name,
           email: String(data.get("email")).trim(),
           plan: String(data.get("plan")),
           phone: String(data.get("phone")).trim(),
+          passwordSalt: salt,
+          passwordHash,
         }));
-      } catch {
-        showFormError(message, "Your browser could not save this demo profile. Please enable local storage and try again.");
-        return;
+      } else {
+        const identifier = String(data.get("email")).trim().toLowerCase();
+        const saved = getProfile();
+        const matchesIdentifier = saved && [saved.email, saved.phone].some((value) => value?.trim().toLowerCase() === identifier);
+        if (!matchesIdentifier) {
+          showFormError(message, "That email or phone number doesn't match a demo account. Register to create one.");
+          return;
+        }
+        if (!saved.passwordSalt || !saved.passwordHash) {
+          showFormError(message, "This demo account needs a password. Register again to create a new demo account.");
+          return;
+        }
+        const passwordHash = await hashPassword(passwordValue, saved.passwordSalt);
+        if (!passwordsMatch(passwordHash, saved.passwordHash)) {
+          showFormError(message, "Incorrect password. Please try again.");
+          return;
+        }
       }
-    } else {
-      const email = document.querySelector("#email").value.trim();
-      const saved = getProfile();
-      if (saved && saved.email.toLowerCase() !== email.toLowerCase()) {
-        showFormError(message, "This demo profile doesn't match that email. You can create a demo account instead.");
-        return;
-      }
-      if (!saved) {
-        showFormError(message, "No demo profile yet. Register to preview your Vault dashboard.");
-        return;
-      }
+      localStorage.setItem(sessionKey, "active");
+      window.location.hash = "/dashboard";
+    } catch (error) {
+      showFormError(message, error instanceof DOMException && error.name === "QuotaExceededError"
+        ? "Your browser storage is full. Clear some space and try again."
+        : "Secure password processing or browser storage failed. Please try again.");
+    } finally {
+      submit.disabled = false;
     }
-    window.location.hash = "/dashboard";
   });
+}
+
+function createPasswordSalt() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function hashPassword(password, salt) {
+  if (!crypto.subtle) throw new Error("Secure password hashing is unavailable.");
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({
+    name: "PBKDF2",
+    salt: new TextEncoder().encode(salt),
+    iterations: 210000,
+    hash: "SHA-256",
+  }, key, 256);
+  return Array.from(new Uint8Array(bits), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function passwordsMatch(actual, expected) {
+  if (actual.length !== expected.length) return false;
+  let difference = 0;
+  for (let index = 0; index < actual.length; index += 1) {
+    difference |= actual.charCodeAt(index) ^ expected.charCodeAt(index);
+  }
+  return difference === 0;
 }
 
 function showFormError(message, text) {
@@ -278,7 +341,7 @@ function dashboardLayout(route, title, content) {
   app.innerHTML = `
     <main class="dashboard">
       <header class="vault-header">
-        <div class="vault-header-inner">${brand()}<button class="menu-toggle" type="button" aria-label="Open navigation menu" aria-expanded="false">${icons.menu}</button></div>
+        <div class="vault-header-inner">${brand()}<div class="header-controls">${themeToggle()}<button class="menu-toggle" type="button" aria-label="Open navigation menu" aria-expanded="false">${icons.menu}</button></div></div>
         <nav class="vault-nav" aria-label="Dashboard navigation" hidden>
           ${navItems.map(([path, label, icon]) => `<a href="#/${path}" ${route === path ? 'aria-current="page"' : ""}>${icon}${label}</a>`).join("")}
           <a href="#/" data-action="logout">${icons.close}Logout</a>
@@ -313,6 +376,7 @@ function dashboardLayout(route, title, content) {
   app.querySelectorAll("[data-action='logout']").forEach((button) => {
     button.addEventListener("click", (event) => {
       if (button.tagName === "A") event.preventDefault();
+      localStorage.removeItem(sessionKey);
       window.location.hash = "/login";
       notify("You have left the local demo.");
     });
@@ -681,22 +745,23 @@ function openGoalDetails(index) {
 }
 
 function openPaymentDialog(initialType) {
-  let paymentMethod = "card";
   let transactionType = initialType;
   const state = getDemoState();
   const goalOptions = state.goals.map((goal, index) => `<option value="${index}">${escapeHtml(goal.name)}</option>`).join("");
-  const { host } = openDialog("Confirm Action", `<form class="dialog-form payment-form">
+  const { host } = openDialog(initialType === "deposit" ? "Add Demo Funds" : "Withdraw Demo Funds", `<form class="dialog-form payment-form">
     <div class="dialog-tabs"><button type="button" data-type="deposit" class="${initialType === "deposit" ? "active" : ""}">Deposit</button><button type="button" data-type="withdraw" class="${initialType === "withdraw" ? "active" : ""}">Withdraw</button></div>
-    <label>Destination / Source<select name="destination"><option value="wallet">General Wallet</option>${goalOptions}</select></label>
-    <label>Amount (KSh)<input name="amount" type="number" min="1" step="1" required /></label>
-    <div class="payment-methods"><button type="button" data-method="card" class="active">Credit Card</button><button type="button" data-method="mpesa">M-Pesa</button></div>
-    <div class="payment-fields"></div><label class="dialog-check"><input type="checkbox" name="remember" />Store for future payments</label>
-    <p class="dialog-note">Demo only — no payment information is transmitted or stored.</p><p class="form-message" role="alert"></p><button class="button button-primary" type="submit">Process ${initialType}</button></form>`, (event, form, modal, close) => {
+    <label class="destination-label">Destination<select name="destination"><option value="wallet">General Wallet</option>${goalOptions}</select></label>
+    <label>Amount (KSh)<input name="amount" type="number" min="1" step="1" inputmode="numeric" placeholder="e.g. 1,000" required /></label>
+    <p class="dialog-note payment-note">Demo only — this simulates funding the selected destination in your local demo. No payment is charged and no card or M-Pesa details are collected.</p><p class="form-message" role="alert"></p><button class="button button-primary" type="submit">Simulate ${initialType}</button></form>`, (event, form, modal, close) => {
     event.preventDefault();
     if (!form.reportValidity()) return;
     const amount = Number(new FormData(form).get("amount"));
     const data = getDemoState();
     const destination = String(new FormData(form).get("destination"));
+    if (!Number.isSafeInteger(amount) || amount <= 0) {
+      showFormError(form.querySelector(".form-message"), "Enter a whole amount greater than zero.");
+      return;
+    }
     if (transactionType === "withdraw" && destination !== "wallet") {
       showFormError(form.querySelector(".form-message"), "Choose General Wallet as the withdrawal source.");
       return;
@@ -712,32 +777,28 @@ function openPaymentDialog(initialType) {
     } else {
       data.balance += transactionType === "deposit" ? amount : -amount;
     }
-    data.transactions.push({ type: transactionType, amount, label: transactionType === "deposit" ? "Demo deposit" : "Demo withdrawal", date: new Date().toLocaleString() });
+    const goalName = destination === "wallet" ? "" : data.goals[Number(destination)]?.name;
+    data.transactions.push({ type: transactionType, amount, label: transactionType === "deposit" ? `Demo deposit${goalName ? ` · ${goalName}` : ""}` : "Demo withdrawal", date: new Date().toLocaleString() });
     if (!saveDemoState(data)) return;
     close();
     render();
     notify(`Demo ${transactionType} complete.`);
   });
   const form = host.querySelector("form");
-  const methodFields = host.querySelector(".payment-fields");
-  function setMethod(method) {
-    paymentMethod = method;
-    host.querySelectorAll("[data-method]").forEach((button) => button.classList.toggle("active", button.dataset.method === method));
-    methodFields.hidden = transactionType === "withdraw";
-    methodFields.innerHTML = method === "card"
-      ? `<label>Name on Card<input autocomplete="off" placeholder="Name on Card" required /></label><label>Card Number<input inputmode="numeric" autocomplete="off" placeholder="Card Number" required minlength="12" maxlength="19" /></label><div class="field-row"><label>MM/YY<input placeholder="MM/YY" required /></label><label>CVC<input inputmode="numeric" placeholder="CVC" required minlength="3" maxlength="4" /></label></div>`
-      : `<label>Phone Number<div class="phone-input"><span>+254</span><input inputmode="numeric" placeholder="7XXXXXXXX" required minlength="9" maxlength="9" /></div></label><p class="dialog-note">An STK push will not be sent in this local demo.</p>`;
-    methodFields.querySelectorAll("input").forEach((input) => {
-      input.required = transactionType === "deposit";
-    });
-  }
-  setMethod(paymentMethod);
-  host.querySelectorAll("[data-method]").forEach((button) => button.addEventListener("click", () => setMethod(button.dataset.method)));
+  const destination = form.querySelector("[name='destination']");
   host.querySelectorAll("[data-type]").forEach((button) => button.addEventListener("click", () => {
     transactionType = button.dataset.type;
     host.querySelectorAll("[data-type]").forEach((tab) => tab.classList.toggle("active", tab === button));
-    form.querySelector("[type='submit']").textContent = `Process ${transactionType}`;
-    setMethod(paymentMethod);
+    destination.value = "wallet";
+    destination.querySelectorAll("option:not([value='wallet'])").forEach((option) => {
+      option.hidden = transactionType === "withdraw";
+      option.disabled = transactionType === "withdraw";
+    });
+    form.querySelector(".destination-label").firstChild.textContent = transactionType === "deposit" ? "Destination" : "Source";
+    form.querySelector(".payment-note").textContent = transactionType === "deposit"
+      ? "Demo only — this simulates funding the selected destination in your local demo. No payment is charged and no card or M-Pesa details are collected."
+      : "Demo only — withdrawals reduce your local demo balance. No money is transferred.";
+    form.querySelector("[type='submit']").textContent = `Simulate ${transactionType}`;
   }));
 }
 
@@ -798,12 +859,25 @@ function openProfileDialog() {
 }
 
 function openPasswordDialog() {
-  const { host } = openDialog("Update Password", `<form class="dialog-form"><label>Current Password<input name="current" type="password" placeholder="••••••••" required /></label><label>New Password<input name="next" type="password" minlength="8" placeholder="••••••••" required /><small>8+ characters (12+ recommended). Use upper, lower, and numbers or symbols.</small></label><label>Confirm New Password<input name="confirm" type="password" minlength="8" placeholder="••••••••" required /></label><p class="dialog-note">Password changes are disabled in this local demo. Passwords are never stored.</p><p class="form-message" role="alert"></p><div class="dialog-actions"><button class="button button-secondary" type="button" data-cancel>Cancel</button><button class="button button-primary" type="submit">Secure Update</button></div></form>`, (event, form) => {
+  const { host } = openDialog("Update Password", `<form class="dialog-form"><label>Current Password<input name="current" type="password" autocomplete="current-password" required /></label><label>New Password<input name="next" type="password" autocomplete="new-password" minlength="8" required /><small>Use at least 8 characters. Passwords are hashed and stored only in this browser.</small></label><label>Confirm New Password<input name="confirm" type="password" autocomplete="new-password" minlength="8" required /></label><p class="form-message" role="alert"></p><div class="dialog-actions"><button class="button button-secondary" type="button" data-cancel>Cancel</button><button class="button button-primary" type="submit">Update Password</button></div></form>`, async (event, form, modal, close) => {
     event.preventDefault();
     if (!form.reportValidity()) return;
     const data = new FormData(form);
-    if (data.get("next") !== data.get("confirm")) return showFormError(form.querySelector(".form-message"), "New passwords do not match.");
-    showFormError(form.querySelector(".form-message"), "Password updates need a secure backend and are disabled in this demo.");
+    const message = form.querySelector(".form-message");
+    const profile = getProfile();
+    if (data.get("next") !== data.get("confirm")) return showFormError(message, "New passwords do not match.");
+    if (!profile?.passwordSalt || !profile?.passwordHash) return showFormError(message, "This account has no demo password. Register again to create a new demo account.");
+    try {
+      const currentHash = await hashPassword(String(data.get("current")), profile.passwordSalt);
+      if (!passwordsMatch(currentHash, profile.passwordHash)) return showFormError(message, "Your current password is incorrect.");
+      const passwordSalt = createPasswordSalt();
+      const passwordHash = await hashPassword(String(data.get("next")), passwordSalt);
+      localStorage.setItem(storageKey, JSON.stringify({ ...profile, passwordSalt, passwordHash }));
+      close();
+      notify("Demo password updated.");
+    } catch {
+      showFormError(message, "Secure password processing or browser storage failed. Please try again.");
+    }
   });
   host.querySelector("[data-cancel]").addEventListener("click", () => host.querySelector(".modal-close").click());
 }
@@ -885,9 +959,24 @@ function render() {
   document.querySelector(".toast")?.remove();
   const route = window.location.hash.replace(/^#\/?/, "").split("?")[0];
   if (route === "login" || route === "register") renderAuth(route);
-  else if (route.startsWith("dashboard")) renderDashboard();
+  else if (route.startsWith("dashboard")) {
+    if (localStorage.getItem(sessionKey) !== "active" || !getProfile()) {
+      window.location.hash = "/login";
+      return;
+    }
+    renderDashboard();
+  }
   else renderLanding();
+  applyTheme(document.documentElement.dataset.theme);
 }
 
 window.addEventListener("hashchange", render);
+app.addEventListener("click", (event) => {
+  const toggle = event.target.closest("[data-action='theme-toggle']");
+  if (!toggle) return;
+  const nextTheme = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+  localStorage.setItem("vault-theme", nextTheme);
+  applyTheme(nextTheme);
+});
+applyTheme(localStorage.getItem("vault-theme") || "dark");
 render();
