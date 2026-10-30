@@ -311,8 +311,9 @@ function dashboardLayout(route, title, content) {
     mobileNav.hidden = expanded;
   });
   app.querySelectorAll("[data-action='logout']").forEach((button) => {
-    button.addEventListener("click", () => {
-      window.location.hash = "/";
+    button.addEventListener("click", (event) => {
+      if (button.tagName === "A") event.preventDefault();
+      window.location.hash = "/login";
       notify("You have left the local demo.");
     });
   });
@@ -332,7 +333,7 @@ function renderOverview() {
   const profile = getProfile();
   const name = profile?.name || "";
   const plan = profile?.plan || "Gold";
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateKey();
   const completed = state.sprintDate === today;
   const firstName = name.split(/\s+/)[0];
   const goals = state.goals.slice(0, 3);
@@ -381,6 +382,7 @@ function renderSavings() {
   const goalTotal = state.goals.reduce((sum, goal) => sum + Number(goal.target || 0), 0);
   const savedTotal = state.goals.reduce((sum, goal) => sum + Number(goal.saved || 0), 0);
   const progress = goalTotal ? Math.min(100, Math.round((savedTotal / goalTotal) * 100)) : 0;
+  const sprintComplete = state.sprintDate === localDateKey();
   const content = `
     <div class="workspace-heading"><div><p class="workspace-label">Finance / Savings</p><h1>Hazina</h1><p class="page-subtitle">A smarter way to build your savings.</p></div><div class="account-tier"><span></span>${state.goals.length} active goals</div></div>
     <div class="savings-summary-grid">
@@ -391,8 +393,8 @@ function renderSavings() {
     </div>
     <button class="intelligence-card" type="button" data-action="intelligence">${icons.sparkle}<span><small>Vault Intelligence</small><strong>Maximize your growth</strong><span>System suggests moving ${money(5000)} to "Emergency Fund" for better yield.</span></span>${icons.chevron}</button>
     <div class="section-heading-row"><h2>Your Targets <span>${state.goals.length} ACTIVE</span></h2><button class="button button-primary" data-action="create-goal">${icons.plus}Create New</button></div>
-    ${state.goals.length ? `<div class="goal-list">${state.goals.map((goal, index) => `<article class="goal-list-card"><div class="goal-list-heading"><div class="goal-art">${icons.target}</div><div><h3>${escapeHtml(goal.name)}</h3><p>${money(goal.saved)} saved of ${money(goal.target)}</p></div><button class="icon-button" data-action="goal-options" data-goal="${index}" aria-label="Goal options">${icons.chevron}</button></div><div class="goal-track"><div class="goal-progress" style="width:${Math.min(100, goal.target ? (goal.saved / goal.target) * 100 : 0)}%"></div></div><button class="goal-contribute" data-action="contribute" data-goal="${index}">${icons.plus} Add savings</button></article>`).join("")}</div>` : `<div class="empty-state">${icons.target}<h3>Ready to start?</h3><p>Create your first highly intelligent saving goal today.</p><button class="button button-primary" data-action="create-goal">${icons.plus}Create a saving goal</button></div>`}
-    <section class="marathon-card savings-marathon"><div class="section-title-row"><div class="section-icon">${icons.bolt}</div><div><h2>Savings Marathon</h2><p>Automated Growth Engine</p></div></div><div class="sprint-panel"><div class="sprint-heading"><p>${icons.target}Daily Sprint</p><span>Streak: ${state.streak} Days</span></div><div class="sprint-detail"><p>Save KSh 1,000 today to maintain your streak.</p><span class="countdown">${icons.clock}<span id="sprint-countdown"></span></span></div><div class="sprint-progress-label"><span>Today’s progress</span><span>${state.sprintDate === new Date().toISOString().slice(0, 10) ? "100%" : "0%"}</span></div><div class="sprint-track"><span style="width:${state.sprintDate === new Date().toISOString().slice(0, 10) ? "100%" : "0%"}"></span></div><button class="button complete-sprint" data-action="complete-sprint">${icons.check}Complete Daily</button></div></section>`;
+    ${state.goals.length ? `<div class="goal-list">${state.goals.map((goal, index) => `<article class="goal-list-card"><div class="goal-list-heading"><div class="goal-art">${goal.photo ? `<img src="${escapeHtml(goal.photo)}" alt="" />` : icons.target}</div><div><h3>${escapeHtml(goal.name)}</h3><p>${money(goal.saved)} saved of ${money(goal.target)}</p></div><button class="icon-button" data-action="goal-options" data-goal="${index}" aria-label="Goal options">${icons.chevron}</button></div><div class="goal-track"><div class="goal-progress" style="width:${Math.min(100, goal.target ? (goal.saved / goal.target) * 100 : 0)}%"></div></div><button class="goal-contribute" data-action="contribute" data-goal="${index}">${icons.plus} Add savings</button></article>`).join("")}</div>` : `<div class="empty-state">${icons.target}<h3>Ready to start?</h3><p>Create your first highly intelligent saving goal today.</p><button class="button button-primary" data-action="create-goal">${icons.plus}Create a saving goal</button></div>`}
+    <section class="marathon-card savings-marathon"><div class="section-title-row"><div class="section-icon">${icons.bolt}</div><div><h2>Savings Marathon</h2><p>Automated Growth Engine</p></div></div><div class="sprint-panel"><div class="sprint-heading"><p>${icons.target}Daily Sprint</p><span>Streak: ${state.streak} Days</span></div><div class="sprint-detail"><p>Save KSh 1,000 today to maintain your streak.</p><span class="countdown">${icons.clock}<span id="sprint-countdown"></span></span></div><div class="sprint-progress-label"><span>Today’s progress</span><span>${sprintComplete ? "100%" : "0%"}</span></div><div class="sprint-track"><span style="width:${sprintComplete ? "100%" : "0%"}"></span></div><button class="button complete-sprint" data-action="complete-sprint" ${sprintComplete ? "disabled" : ""}>${icons.check}${sprintComplete ? "Completed today" : "Complete Daily"}</button></div></section>`;
   dashboardLayout("dashboard/savings", "Savings", content);
   bindDashboardActions();
   startCountdown();
@@ -401,16 +403,16 @@ function renderSavings() {
 function renderInvestments() {
   const state = getDemoState();
   const popular = [
-    ["AA", "Apple Inc.", "Stock", "$173.5", "+1.24%", "Stocks"],
-    ["BT", "Bitcoin", "Crypto", "$112638.3", "+0.5%", "Crypto"],
-    ["EU", "EUR/USD", "Forex", "$1.0945", "−0.12%", "Forex"],
-    ["XA", "Gold", "Metal", "$2345.6", "+0.85%", "Minerals"],
-    ["US", "Crude Oil", "Oil", "$82.3", "−1.5%", "Minerals"],
+    ["AA", "Apple Inc.", "Stock", "$173.5", "+1.24%", "Stocks", "AAPL"],
+    ["BT", "Bitcoin", "Crypto", "$112638.3", "+0.5%", "Crypto", "btc"],
+    ["EU", "EUR/USD", "Forex", "$1.0945", "−0.12%", "Forex", "EURUSD"],
+    ["XA", "Gold", "Metal", "$2345.6", "+0.85%", "Minerals", "XAUUSD"],
+    ["US", "Crude Oil", "Oil", "$82.3", "−1.5%", "Minerals", "CL"],
   ];
   const content = `
     <div class="workspace-heading"><div><p class="workspace-label">Workspace</p><h1>Investments</h1><p class="page-subtitle">Explore markets and follow assets from one place.</p></div></div>
-    <section class="popular-card"><div class="popular-heading"><h2>Popular <span>›</span></h2><div><button class="icon-button" aria-label="Market pulse" data-toast="Market data is a static demo snapshot.">${icons.chart}</button><button class="icon-button" data-action="toggle-watchlist" aria-label="Toggle watchlist">${icons.target}</button></div></div>
-      <div class="popular-list">${popular.map(([ticker, name, category, price, change, group]) => `<button class="popular-item" data-action="select-popular" data-ticker="${ticker}" data-category="${group}"><span class="popular-ticker">${ticker}</span><span class="popular-name"><strong>${name}</strong><small>${category}</small></span><span class="popular-quote"><strong>${price}</strong><small class="${change.startsWith("−") ? "negative" : "positive"}">${change.startsWith("−") ? "▼" : "▲"} ${change.replace(/[+−]/, "")}</small></span></button>`).join("")}</div>
+    <section class="popular-card"><div class="popular-heading"><h2>Popular <span>›</span></h2><div><button class="icon-button" aria-label="Market pulse" data-toast="Market data is a static demo snapshot.">${icons.chart}</button><button class="icon-button" data-action="toggle-watchlist" aria-label="Show watchlist" aria-pressed="false">${icons.target}</button></div></div>
+      <div class="popular-list" id="popular-list"></div>
     </section>
     <div class="market-stats"><article class="market-stat"><strong>$457.94</strong><span class="negative">↘ 4.69%</span><p>Market sentiment</p></article><article class="market-stat"><strong>$2.74T</strong><span class="positive">↗ 2.1%</span><p>Total Market Cap (Crypto)</p></article><article class="market-stat"><strong>$142.8B</strong><span>24h</span><p>24h Volume</p></article><article class="market-stat"><strong>54.2%</strong><span>BTC</span><p>BTC Dominance</p></article></div>
     <section class="chart-card"><div class="chart-card-heading"><div><p>Market chart</p><h2 id="chart-symbol">OANDA:EURUSD</h2></div><label class="chart-currency">Currency<select id="market-currency"><option>USD</option><option>EUR</option></select></label></div><div class="chart-display"><div class="chart-y-labels"><span>1.12</span><span>1.10</span><span>1.08</span><span>1.06</span></div><svg class="market-chart" viewBox="0 0 900 240" preserveAspectRatio="none" role="img" aria-label="Illustrative market price chart"><defs><linearGradient id="chart-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#f3c400" stop-opacity=".22"/><stop offset="1" stop-color="#f3c400" stop-opacity="0"/></linearGradient></defs><path class="chart-area" d="M0 180 L40 169 78 174 115 147 153 158 192 130 225 145 260 107 299 121 336 110 373 131 412 98 450 112 488 84 526 105 562 71 600 90 640 75 679 91 718 48 755 68 793 41 833 56 870 29 900 38 V240 H0Z"/><path class="chart-line" d="M0 180 L40 169 78 174 115 147 153 158 192 130 225 145 260 107 299 121 336 110 373 131 412 98 450 112 488 84 526 105 562 71 600 90 640 75 679 91 718 48 755 68 793 41 833 56 870 29 900 38"/></svg></div><div class="chart-intervals">${["1D","5D","1M","3M","6M","YTD","1Y","5Y","All"].map((interval, index) => `<button class="${index === 0 ? "active" : ""}" data-interval="${interval}">${interval}</button>`).join("")}</div></section>
@@ -471,32 +473,48 @@ function renderInvestments() {
     event.currentTarget.classList.toggle("active", moversOnly);
     renderRows();
   });
-  app.querySelectorAll("[data-action='select-popular']").forEach((button) => button.addEventListener("click", () => {
-    selectedSymbol = button.dataset.ticker;
-    app.querySelector("#chart-symbol").textContent = selectedSymbol;
-    category = button.dataset.category;
-    app.querySelectorAll(".market-tabs button").forEach((tab) => tab.classList.toggle("active", tab.dataset.category === category));
-    renderRows();
-    app.querySelector(".market-table-section").scrollIntoView({ behavior: "smooth" });
-  }));
-  const watchlist = state.watchlist || [];
+  let watchlist = state.watchlist || [];
+  let showingWatchlist = false;
   const watchButton = app.querySelector("[data-action='toggle-watchlist']");
-  watchButton.classList.toggle("active", watchlist.length > 0);
+  const popularList = app.querySelector("#popular-list");
+  function renderPopular() {
+    const items = showingWatchlist ? popular.filter((item) => watchlist.includes(item[6])) : popular;
+    popularList.innerHTML = items.length ? items.map(([ticker, name, categoryName, price, change, group, symbol]) => `<button class="popular-item" data-action="select-popular" data-ticker="${symbol}" data-category="${group}"><span class="popular-ticker">${ticker}</span><span class="popular-name"><strong>${name}</strong><small>${categoryName}</small></span><span class="popular-quote"><strong>${price}</strong><small class="${change.startsWith("−") ? "negative" : "positive"}">${change.startsWith("−") ? "▼" : "▲"} ${change.replace(/[+−]/, "")}</small></span></button>`).join("") : '<p class="empty-inline">No popular assets match your watchlist.</p>';
+    popularList.querySelectorAll("[data-action='select-popular']").forEach((button) => button.addEventListener("click", () => {
+      selectedSymbol = button.dataset.ticker;
+      app.querySelector("#chart-symbol").textContent = selectedSymbol;
+      category = button.dataset.category;
+      app.querySelectorAll(".market-tabs button").forEach((tab) => tab.classList.toggle("active", tab.dataset.category === category));
+      renderRows();
+      app.querySelector(".market-table-section").scrollIntoView({ behavior: "smooth" });
+    }));
+  }
+  renderPopular();
+  watchButton.classList.toggle("active", showingWatchlist);
+  watchButton.setAttribute("aria-pressed", "false");
   watchButton.addEventListener("click", () => {
-    const next = getDemoState();
-    next.watchlist = next.watchlist?.length ? [] : ["AAPL", "btc", "EURUSD"];
-    if (saveDemoState(next)) {
-      watchButton.classList.toggle("active", next.watchlist.length > 0);
-      notify(next.watchlist.length ? "Popular assets added to your demo watchlist." : "Demo watchlist cleared.");
+    if (!watchlist.length) {
+      const next = getDemoState();
+      next.watchlist = ["AAPL", "btc", "EURUSD"];
+      if (!saveDemoState(next)) return;
+      watchlist = next.watchlist;
     }
+    showingWatchlist = !showingWatchlist;
+    watchButton.classList.toggle("active", showingWatchlist);
+    watchButton.setAttribute("aria-pressed", String(showingWatchlist));
+    watchButton.setAttribute("aria-label", showingWatchlist ? "Show popular assets" : "Show watchlist");
+    renderPopular();
   });
   bindDashboardActions();
 }
 
 function formatCurrency(value, currency) {
-  if (currency === "USD" || value.startsWith("$") || value.endsWith("%")) return value;
-  const numeric = Number(value.replace(/,/g, ""));
-  return Number.isFinite(numeric) ? `€${(numeric * 0.92).toFixed(2)}` : value;
+  if (currency === "USD" || value.endsWith("%") || value.includes("bps")) return value;
+  if (value.startsWith("$")) {
+    const numeric = Number(value.slice(1).replace(/,/g, ""));
+    return Number.isFinite(numeric) ? `€${(numeric * 0.92).toLocaleString("en-IE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : value;
+  }
+  return value;
 }
 
 function renderTransactions() {
@@ -555,7 +573,7 @@ function bindDashboardActions() {
   app.querySelectorAll("[data-action='create-goal']").forEach((button) => button.addEventListener("click", openGoalDialog));
   app.querySelectorAll("[data-action='complete-sprint']").forEach((button) => button.addEventListener("click", completeSprint));
   app.querySelectorAll("[data-action='contribute']").forEach((button) => button.addEventListener("click", () => openContributionDialog(Number(button.dataset.goal))));
-  app.querySelectorAll("[data-action='goal-options']").forEach((button) => button.addEventListener("click", () => notify("Goal details are shown in your savings workspace.")));
+  app.querySelectorAll("[data-action='goal-options']").forEach((button) => button.addEventListener("click", () => openGoalDetails(Number(button.dataset.goal))));
   app.querySelectorAll("[data-action='intelligence']").forEach((button) => button.addEventListener("click", () => notify("Vault Intelligence is a demo suggestion, not financial advice.")));
   app.querySelectorAll("[data-action='invest']").forEach((button) => button.addEventListener("click", () => openInvestDialog(funds[Number(app.dataset.selectedFund) || 0])));
   app.querySelectorAll("[data-action='edit-profile']").forEach((button) => button.addEventListener("click", openProfileDialog));
@@ -589,16 +607,76 @@ function openDialog(title, body, onSubmit) {
 }
 
 function openGoalDialog() {
-  openDialog("Create Saving Goal", `<form class="dialog-form"><label>Goal Name<input name="name" placeholder="e.g. New Home, Dream Car" required minlength="2" /></label><label>Target Amount (KSh)<input name="target" type="number" min="1" step="1" required /></label><label>Photo Source (Optional)<input name="photo" type="url" placeholder="Or paste an image link here..." /></label><p class="dialog-note">Goals are saved only in this browser’s local demo.</p><p class="form-message" role="alert"></p><button class="button button-primary" type="submit">Create Goal</button></form>`, (event, form, host, close) => {
+  let photoFileData = "";
+  const { host } = openDialog("Create Saving Goal", `<form class="dialog-form"><label>Goal Name<input name="name" placeholder="e.g. New Home, Dream Car" required minlength="2" /></label><label>Target Amount (KSh)<input name="target" type="number" min="1" step="1" required /></label><div class="photo-picker"><button type="button" class="button button-secondary" data-photo-trigger>${icons.plus}Add Photo</button><input type="file" name="photoFile" accept="image/*" hidden /><span class="photo-filename">Optional photo</span></div><label>Photo Source (Optional)<input name="photo" type="url" placeholder="Or paste an image link here..." /></label><p class="dialog-note">Goals are saved only in this browser’s local demo.</p><p class="form-message" role="alert"></p><button class="button button-primary" type="submit">Create Goal</button></form>`, (event, form, modal, close) => {
     event.preventDefault();
     if (!form.reportValidity()) return;
     const data = new FormData(form);
+    let photo = photoFileData;
+    const photoUrl = String(data.get("photo") || "").trim();
+    if (photoUrl) {
+      try {
+        const url = new URL(photoUrl);
+        if (url.protocol !== "https:") throw new Error("Unsupported image URL protocol.");
+        photo = url.href;
+      } catch {
+        return showFormError(form.querySelector(".form-message"), "Use a valid HTTPS image link or choose a photo file.");
+      }
+    }
     const state = getDemoState();
-    state.goals.push({ name: String(data.get("name")).trim(), target: Number(data.get("target")), saved: 0, createdAt: new Date().toISOString() });
+    state.goals.push({ name: String(data.get("name")).trim(), target: Number(data.get("target")), saved: 0, photo, createdAt: new Date().toISOString() });
     if (!saveDemoState(state)) return;
     close();
     render();
     notify("Your demo savings goal was created.");
+  });
+  const fileInput = host.querySelector("[name='photoFile']");
+  host.querySelector("[data-photo-trigger]").addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      fileInput.value = "";
+      return notify("Choose an image file for your savings goal.");
+    }
+
+    if (file.size > 1_000_000) {
+      fileInput.value = "";
+      return notify("Choose an image smaller than 1 MB.");
+    }
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      if (typeof reader.result !== "string") return notify("The selected image couldn't be read.");
+      photoFileData = reader.result;
+      host.querySelector(".photo-filename").textContent = file.name;
+    });
+    reader.addEventListener("error", () => notify("The selected image couldn't be read."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function openGoalDetails(index) {
+  const goal = getDemoState().goals[index];
+  if (!goal) return notify("This savings goal is no longer available.");
+  const progress = goal.target ? Math.min(100, Math.round((goal.saved / goal.target) * 100)) : 0;
+  const { host, close } = openDialog(goal.name, `<div class="goal-details"><p>${money(goal.saved)} saved of ${money(goal.target)}</p><div class="goal-track"><div class="goal-progress" style="width:${progress}%"></div></div><p>${progress}% of your target reached.</p><div class="dialog-actions"><button class="button button-secondary" type="button" data-cancel>Close</button><button class="button button-primary" type="button" data-contribute>Add savings</button></div><button class="delete-goal" type="button" data-delete>Delete goal</button></div>`);
+  host.querySelector("[data-cancel]").addEventListener("click", () => host.querySelector(".modal-close").click());
+  host.querySelector("[data-contribute]").addEventListener("click", () => {
+    close();
+    openContributionDialog(index);
+  });
+  host.querySelector("[data-delete]").addEventListener("click", () => {
+    close();
+    const confirmation = openDialog("Delete savings goal?", `<p class="dialog-note">This removes the goal and its saved progress from this browser’s demo.</p><div class="dialog-actions"><button class="button button-secondary" type="button" data-cancel>Keep goal</button><button class="button delete-confirm" type="button" data-confirm-delete>Delete goal</button></div>`);
+    confirmation.host.querySelector("[data-cancel]").addEventListener("click", () => confirmation.host.querySelector(".modal-close").click());
+    confirmation.host.querySelector("[data-confirm-delete]").addEventListener("click", () => {
+      const state = getDemoState();
+      state.goals.splice(index, 1);
+      if (!saveDemoState(state)) return;
+      confirmation.close();
+      render();
+      notify("Demo savings goal deleted.");
+    });
   });
 }
 
@@ -703,7 +781,7 @@ function openInvestDialog(fund) {
 
 function openProfileDialog() {
   const profile = getProfile() || { name: "", phone: "", email: "" };
-  openDialog("Edit Profile", `<form class="dialog-form"><label>Full Name<input name="name" value="${escapeHtml(profile.name || "")}" placeholder="Enter your full name" required minlength="2" /></label><label>Phone Number<input name="phone" value="${escapeHtml(profile.phone || "")}" placeholder="Enter your phone number" /></label><p class="form-message" role="alert"></p><div class="dialog-actions"><button class="button button-secondary" type="button" data-cancel>Cancel</button><button class="button button-primary" type="submit">Save Changes</button></div></form>`, (event, form, host, close) => {
+  const { host } = openDialog("Edit Profile", `<form class="dialog-form"><label>Full Name<input name="name" value="${escapeHtml(profile.name || "")}" placeholder="Enter your full name" required minlength="2" /></label><label>Phone Number<input name="phone" value="${escapeHtml(profile.phone || "")}" placeholder="Enter your phone number" /></label><p class="form-message" role="alert"></p><div class="dialog-actions"><button class="button button-secondary" type="button" data-cancel>Cancel</button><button class="button button-primary" type="submit">Save Changes</button></div></form>`, (event, form, host, close) => {
     event.preventDefault();
     if (!form.reportValidity()) return;
     const data = new FormData(form);
@@ -732,7 +810,7 @@ function openPasswordDialog() {
 
 function openPlanDialog() {
   const profile = getProfile() || { name: "Demo Member", email: "demo@vault.test", plan: "Gold" };
-  openDialog("Manage Subscription", `<form class="dialog-form"><label>Select Plan<select name="plan">${["Basic", "Premium", "Gold"].map((plan) => `<option ${plan === profile.plan ? "selected" : ""}>${plan}</option>`).join("")}</select></label><div class="plan-choices"><article><strong>Basic</strong><span>Secure deposits · Global withdrawals</span></article><article><strong>Premium</strong><span>Custom goals · Standing orders</span></article><article><strong>Gold</strong><span>Premium access · Money market funds</span></article></div><p class="dialog-note">Plan changes only update your local demo profile.</p><p class="form-message" role="alert"></p><div class="dialog-actions"><button class="button button-secondary" type="button" data-cancel>Cancel</button><button class="button button-primary" type="submit">Save Plan</button></div></form>`, (event, form, host, close) => {
+  const { host } = openDialog("Manage Subscription", `<form class="dialog-form"><label>Select Plan<select name="plan">${["Basic", "Premium", "Gold"].map((plan) => `<option ${plan === profile.plan ? "selected" : ""}>${plan}</option>`).join("")}</select></label><div class="plan-choices"><article><strong>Basic</strong><span>Secure deposits · Global withdrawals</span></article><article><strong>Premium</strong><span>Custom goals · Standing orders</span></article><article><strong>Gold</strong><span>Premium access · Money market funds</span></article></div><p class="dialog-note">Plan changes only update your local demo profile.</p><p class="form-message" role="alert"></p><div class="dialog-actions"><button class="button button-secondary" type="button" data-cancel>Cancel</button><button class="button button-primary" type="submit">Save Plan</button></div></form>`, (event, form, host, close) => {
     event.preventDefault();
     const data = new FormData(form);
     try {
@@ -753,15 +831,22 @@ function closeDialog() {
 
 function completeSprint() {
   const state = getDemoState();
-  if (state.sprintDate === new Date().toISOString().slice(0, 10)) return notify("Your daily sprint is already complete.");
+  if (state.sprintDate === localDateKey()) return notify("Your daily sprint is already complete.");
   state.balance += 1000;
   state.streak += 1;
-  state.sprintDate = new Date().toISOString().slice(0, 10);
+  state.sprintDate = localDateKey();
   state.transactions.push({ type: "deposit", amount: 1000, label: "Daily sprint · demo", date: new Date().toLocaleString() });
   if (saveDemoState(state)) {
     render();
     notify("Daily sprint complete. KSh 1,000 added to your demo wallet.");
   }
+}
+
+function localDateKey() {
+  const date = new Date();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
 }
 
 function startCountdown() {

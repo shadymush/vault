@@ -333,6 +333,7 @@ button { color: inherit; }
 .goal-list-heading { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
 .goal-art { width: 39px; height: 39px; display: grid; place-items: center; border-radius: 12px; color: #ffd21c; background: #ffc40012; }
 .goal-art svg { width: 20px; height: 20px; }
+.goal-art img { width: 100%; height: 100%; border-radius: inherit; object-fit: cover; }
 .goal-list-heading > div:nth-child(2) { min-width: 0; flex: 1; }
 .goal-list-heading h3 { overflow: hidden; margin: 0; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .goal-list-heading p { margin: 5px 0 0; color: #96939a; font-size: 10px; }
@@ -457,6 +458,7 @@ button { color: inherit; }
 .dialog-form input:focus, .dialog-form select:focus { border-color: #d6b522; box-shadow: 0 0 0 3px #d6b52222; }
 .dialog-form input::placeholder { color: #76737a; }
 .dialog-form small { color: #85828a; font-size: 9px; line-height: 1.5; }
+.dialog-form .button:disabled { opacity: .55; cursor: not-allowed; transform: none; }
 .dialog-form .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .dialog-form .field-row label { display: grid; gap: 7px; color: #c1bdc2; font-size: 11px; }
 .dialog-note { margin: 0; color: #8e8a92; font-size: 10px; line-height: 1.6; }
@@ -481,6 +483,16 @@ button { color: inherit; }
 .plan-choices article { padding: 11px; display: grid; gap: 5px; border: 1px solid #ffffff12; border-radius: 8px; background: #ffffff04; }
 .plan-choices strong { color: #ece9e1; font-size: 11px; }
 .plan-choices span { color: #918e95; font-size: 9px; }
+.photo-picker { display: flex; align-items: center; gap: 11px; }
+.photo-picker .button { min-height: 37px; padding: 0 12px; border-radius: 8px; font-size: 10px; }
+.photo-picker .button svg { width: 14px; height: 14px; }
+.photo-filename { overflow: hidden; color: #8e8a92; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.empty-inline { margin: 15px 0; color: #96929a; font-size: 11px; line-height: 1.6; }
+.goal-details > p { color: #aaa7af; font-size: 11px; }
+.goal-details .goal-track { margin: 14px 0; }
+.delete-goal { margin-top: 16px; padding: 8px 0; border: 0; color: #e68789; background: transparent; font-size: 10px; cursor: pointer; }
+.delete-confirm { min-height: 39px; padding: 0 13px; border: 1px solid #623a3c; border-radius: 8px; color: #ffc0c1; background: #451f22; font-size: 10px; cursor: pointer; }
+.delete-confirm:hover { background: #5a292d; }
 
 @media (max-width: 900px) {
   .dashboard-shell { grid-template-columns: 190px minmax(0, 1fr); }
