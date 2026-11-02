@@ -1,7 +1,7 @@
 const app = document.querySelector("#app");
-const storageKey = "vault-demo-profile";
-const stateKey = "vault-demo-state";
-const sessionKey = "vault-demo-session";
+const storageKey = "vault-profile";
+const stateKey = "vault-state";
+const sessionKey = "vault-session";
 
 const icons = {
   bolt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m13 2-3 9h8L9 22l3-9H4l9-11Z"/></svg>',
@@ -141,7 +141,7 @@ function renderAuth(mode) {
           <button class="button button-primary auth-submit" type="submit">${registering ? "Continue to Vault" : "Sign In"}</button>
         </form>
         <p class="auth-switch">${registering ? 'Already have an account? <a class="text-link" href="#/login">Login</a>' : 'Don’t have an account? <a class="text-link" href="#/register">Register</a>'}</p>
-        <p class="demo-note">Demo account stored in this browser only. Your password is never stored in plain text. This is not secure production authentication.</p>
+        <p class="account-note">This account is stored in this browser only. Your password is never stored in plain text. This is not secure production authentication.</p>
       </section>
     </main>`;
 
@@ -186,11 +186,11 @@ function renderAuth(mode) {
         const saved = getProfile();
         const matchesIdentifier = saved && [saved.email, saved.phone].some((value) => value?.trim().toLowerCase() === identifier);
         if (!matchesIdentifier) {
-          showFormError(message, "That email or phone number doesn't match a demo account. Register to create one.");
+          showFormError(message, "That email or phone number doesn't match an account. Create one to get started.");
           return;
         }
         if (!saved.passwordSalt || !saved.passwordHash) {
-          showFormError(message, "This demo account needs a password. Register again to create a new demo account.");
+          showFormError(message, "This account needs a password. Create an account to set a new password.");
           return;
         }
         const passwordHash = await hashPassword(passwordValue, saved.passwordSalt);
@@ -297,7 +297,7 @@ const markets = {
   ],
 };
 
-function getDemoState() {
+function getVaultState() {
   try {
     const saved = JSON.parse(localStorage.getItem(stateKey) || "{}");
     return {
@@ -314,12 +314,12 @@ function getDemoState() {
   }
 }
 
-function saveDemoState(state) {
+function saveVaultState(state) {
   try {
     localStorage.setItem(stateKey, JSON.stringify(state));
     return true;
   } catch {
-    notify("Your browser couldn't save this demo change. Check local storage settings.");
+    notify("Your browser couldn't save this change. Check local storage settings.");
     return false;
   }
 }
@@ -359,7 +359,7 @@ function dashboardLayout(route, title, content) {
           <button class="side-logout" type="button" data-action="logout">${icons.close}Logout</button>
         </aside>
         <section class="dashboard-main">
-          <header class="dashboard-topbar"><span>Workspace <span aria-hidden="true">/</span> <strong>${escapeHtml(title)}</strong></span><span class="demo-badge">Demo account</span></header>
+          <header class="dashboard-topbar"><span>Workspace <span aria-hidden="true">/</span> <strong>${escapeHtml(title)}</strong></span><span class="vault-badge">Secure account</span></header>
           <div class="dashboard-page">${content}</div>
         </section>
       </div>
@@ -378,7 +378,7 @@ function dashboardLayout(route, title, content) {
       if (button.tagName === "A") event.preventDefault();
       localStorage.removeItem(sessionKey);
       window.location.hash = "/login";
-      notify("You have left the local demo.");
+      notify("You have signed out of this account.");
     });
   });
 }
@@ -393,7 +393,7 @@ function renderDashboard() {
 }
 
 function renderOverview() {
-  const state = getDemoState();
+  const state = getVaultState();
   const profile = getProfile();
   const name = profile?.name || "";
   const plan = profile?.plan || "Gold";
@@ -442,7 +442,7 @@ function renderOverview() {
 }
 
 function renderSavings() {
-  const state = getDemoState();
+  const state = getVaultState();
   const goalTotal = state.goals.reduce((sum, goal) => sum + Number(goal.target || 0), 0);
   const savedTotal = state.goals.reduce((sum, goal) => sum + Number(goal.saved || 0), 0);
   const progress = goalTotal ? Math.min(100, Math.round((savedTotal / goalTotal) * 100)) : 0;
@@ -465,7 +465,7 @@ function renderSavings() {
 }
 
 function renderInvestments() {
-  const state = getDemoState();
+  const state = getVaultState();
   const popular = [
     ["AA", "Apple Inc.", "Stock", "$173.5", "+1.24%", "Stocks", "AAPL"],
     ["BT", "Bitcoin", "Crypto", "$112638.3", "+0.5%", "Crypto", "btc"],
@@ -475,7 +475,7 @@ function renderInvestments() {
   ];
   const content = `
     <div class="workspace-heading"><div><p class="workspace-label">Workspace</p><h1>Investments</h1><p class="page-subtitle">Explore markets and follow assets from one place.</p></div></div>
-    <section class="popular-card"><div class="popular-heading"><h2>Popular <span>›</span></h2><div><button class="icon-button" aria-label="Market pulse" data-toast="Market data is a static demo snapshot.">${icons.chart}</button><button class="icon-button" data-action="toggle-watchlist" aria-label="Show watchlist" aria-pressed="false">${icons.target}</button></div></div>
+    <section class="popular-card"><div class="popular-heading"><h2>Popular <span>›</span></h2><div><button class="icon-button" aria-label="Market pulse" data-toast="Market data is a static snapshot.">${icons.chart}</button><button class="icon-button" data-action="toggle-watchlist" aria-label="Show watchlist" aria-pressed="false">${icons.target}</button></div></div>
       <div class="popular-list" id="popular-list"></div>
     </section>
     <div class="market-stats"><article class="market-stat"><strong>$457.94</strong><span class="negative">↘ 4.69%</span><p>Market sentiment</p></article><article class="market-stat"><strong>$2.74T</strong><span class="positive">↗ 2.1%</span><p>Total Market Cap (Crypto)</p></article><article class="market-stat"><strong>$142.8B</strong><span>24h</span><p>24h Volume</p></article><article class="market-stat"><strong>54.2%</strong><span>BTC</span><p>BTC Dominance</p></article></div>
@@ -484,7 +484,7 @@ function renderInvestments() {
       <div class="market-tabs">${Object.keys(markets).map((category, index) => `<button class="${index === 0 ? "active" : ""}" data-category="${escapeHtml(category)}">${escapeHtml(category)}</button>`).join("")}</div>
       <div class="market-controls"><label class="market-search">${icons.search}<input type="search" id="market-search" placeholder="Search..." aria-label="Search markets"></label><label class="currency-select"><span>Currency</span><select id="table-currency"><option>USD</option><option>EUR</option></select></label></div>
       <div class="market-table-wrap"><table class="market-table"><thead><tr><th>No.</th><th>Asset</th><th>Price</th><th>Market cap</th><th>Change</th><th></th></tr></thead><tbody id="market-rows"></tbody></table></div>
-      <p class="market-disclaimer">Market prices and yields are illustrative demo data, not live investment advice.</p>
+      <p class="market-disclaimer">Market prices and yields are illustrative sample data, not live investment advice.</p>
     </section>`;
   dashboardLayout("dashboard/investments", "Investments", content);
   let category = "Forex";
@@ -558,9 +558,9 @@ function renderInvestments() {
   watchButton.setAttribute("aria-pressed", "false");
   watchButton.addEventListener("click", () => {
     if (!watchlist.length) {
-      const next = getDemoState();
+      const next = getVaultState();
       next.watchlist = ["AAPL", "btc", "EURUSD"];
-      if (!saveDemoState(next)) return;
+      if (!saveVaultState(next)) return;
       watchlist = next.watchlist;
     }
     showingWatchlist = !showingWatchlist;
@@ -582,23 +582,23 @@ function formatCurrency(value, currency) {
 }
 
 function renderTransactions() {
-  const state = getDemoState();
+  const state = getVaultState();
   const rows = [...state.transactions].reverse();
   const content = `
     <div class="workspace-heading"><div><p class="workspace-label">Workspace</p><h1>History</h1><p class="page-subtitle">Transactions</p></div></div>
-    ${rows.length ? `<section class="history-card"><div class="history-head"><h2>Recent activity</h2><span>${rows.length} transactions</span></div><div class="history-list">${rows.map((entry) => `<article class="history-row"><span class="activity-icon ${entry.type === "withdraw" ? "out" : ""}">${entry.type === "withdraw" ? icons.down : icons.up}</span><span class="activity-copy"><strong>${escapeHtml(entry.label)}</strong><small>${escapeHtml(entry.date)}</small></span><strong class="activity-amount ${entry.type === "withdraw" ? "out" : "in"}">${entry.type === "withdraw" ? "−" : "+"}${money(entry.amount)}</strong></article>`).join("")}</div></section>` : `<div class="empty-state transaction-empty">${icons.wallet}<h3>No Transactions Yet</h3><p>You haven't made any deposits or withdrawals yet. Your transaction history will appear here.</p><button class="button button-primary" data-action="deposit">${icons.plus}Make a demo deposit</button></div>`}`;
+    ${rows.length ? `<section class="history-card"><div class="history-head"><h2>Recent activity</h2><span>${rows.length} transactions</span></div><div class="history-list">${rows.map((entry) => `<article class="history-row"><span class="activity-icon ${entry.type === "withdraw" ? "out" : ""}">${entry.type === "withdraw" ? icons.down : icons.up}</span><span class="activity-copy"><strong>${escapeHtml(entry.label)}</strong><small>${escapeHtml(entry.date)}</small></span><strong class="activity-amount ${entry.type === "withdraw" ? "out" : "in"}">${entry.type === "withdraw" ? "−" : "+"}${money(entry.amount)}</strong></article>`).join("")}</div></section>` : `<div class="empty-state transaction-empty">${icons.wallet}<h3>No Transactions Yet</h3><p>You haven't made any deposits or withdrawals yet. Your transaction history will appear here.</p><button class="button button-primary" data-action="deposit">${icons.plus}Make a deposit</button></div>`}`;
   dashboardLayout("dashboard/transactions", "Transactions", content);
   bindDashboardActions();
 }
 
 function renderSettings() {
-  const profile = getProfile() || { name: "Demo Member", email: "demo@vault.test", phone: "", plan: "Gold" };
+  const profile = getProfile() || { name: "Vault Member", email: "member@vault.com", phone: "", plan: "Gold" };
   const plan = profile.plan || "Gold";
   const content = `
     <div class="workspace-heading"><div><p class="workspace-label">Workspace</p><h1>Configuration</h1><p class="page-subtitle">Settings</p></div></div>
     <div class="settings-grid"><div class="settings-column">
       <section class="settings-card"><div class="settings-heading"><span class="section-icon">${icons.wallet}</span><h2>Personal Information</h2><button class="icon-button" type="button" aria-label="Edit profile" data-action="edit-profile">${icons.settings}</button></div>
-        <dl class="profile-details"><div><dt>Full Name</dt><dd>${escapeHtml(profile.name || "Demo Member")}</dd></div><div><dt>Email Address</dt><dd>${escapeHtml(profile.email || "demo@vault.test")}</dd></div><div><dt>Phone Number</dt><dd>${escapeHtml(profile.phone || "Not provided")}</dd></div></dl>
+        <dl class="profile-details"><div><dt>Full Name</dt><dd>${escapeHtml(profile.name || "Vault Member")}</dd></div><div><dt>Email Address</dt><dd>${escapeHtml(profile.email || "member@vault.com")}</dd></div><div><dt>Phone Number</dt><dd>${escapeHtml(profile.phone || "Not provided")}</dd></div></dl>
         <button class="button button-secondary settings-button" data-action="edit-profile">Edit Profile</button>
       </section>
       <section class="settings-card"><div class="settings-heading"><span class="section-icon">${icons.shield}</span><h2>Security</h2></div><div class="security-setting"><div><strong>Password</strong><p>Manage your secure entry key</p></div><button class="button button-secondary" data-action="update-password">Update Password</button></div></section>
@@ -638,7 +638,7 @@ function bindDashboardActions() {
   app.querySelectorAll("[data-action='complete-sprint']").forEach((button) => button.addEventListener("click", completeSprint));
   app.querySelectorAll("[data-action='contribute']").forEach((button) => button.addEventListener("click", () => openContributionDialog(Number(button.dataset.goal))));
   app.querySelectorAll("[data-action='goal-options']").forEach((button) => button.addEventListener("click", () => openGoalDetails(Number(button.dataset.goal))));
-  app.querySelectorAll("[data-action='intelligence']").forEach((button) => button.addEventListener("click", () => notify("Vault Intelligence is a demo suggestion, not financial advice.")));
+  app.querySelectorAll("[data-action='intelligence']").forEach((button) => button.addEventListener("click", () => notify("Vault Intelligence is a sample suggestion, not financial advice.")));
   app.querySelectorAll("[data-action='invest']").forEach((button) => button.addEventListener("click", () => openInvestDialog(funds[Number(app.dataset.selectedFund) || 0])));
   app.querySelectorAll("[data-action='edit-profile']").forEach((button) => button.addEventListener("click", openProfileDialog));
   app.querySelectorAll("[data-action='update-password']").forEach((button) => button.addEventListener("click", openPasswordDialog));
@@ -672,7 +672,7 @@ function openDialog(title, body, onSubmit) {
 
 function openGoalDialog() {
   let photoFileData = "";
-  const { host } = openDialog("Create Saving Goal", `<form class="dialog-form"><label>Goal Name<input name="name" placeholder="e.g. New Home, Dream Car" required minlength="2" /></label><label>Target Amount (KSh)<input name="target" type="number" min="1" step="1" required /></label><div class="photo-picker"><button type="button" class="button button-secondary" data-photo-trigger>${icons.plus}Add Photo</button><input type="file" name="photoFile" accept="image/*" hidden /><span class="photo-filename">Optional photo</span></div><label>Photo Source (Optional)<input name="photo" type="url" placeholder="Or paste an image link here..." /></label><p class="dialog-note">Goals are saved only in this browser’s local demo.</p><p class="form-message" role="alert"></p><button class="button button-primary" type="submit">Create Goal</button></form>`, (event, form, modal, close) => {
+  const { host } = openDialog("Create Saving Goal", `<form class="dialog-form"><label>Goal Name<input name="name" placeholder="e.g. New Home, Dream Car" required minlength="2" /></label><label>Target Amount (KSh)<input name="target" type="number" min="1" step="1" required /></label><div class="photo-picker"><button type="button" class="button button-secondary" data-photo-trigger>${icons.plus}Add Photo</button><input type="file" name="photoFile" accept="image/*" hidden /><span class="photo-filename">Optional photo</span></div><label>Photo Source (Optional)<input name="photo" type="url" placeholder="Or paste an image link here..." /></label><p class="dialog-note">Goals are saved only in this browser.</p><p class="form-message" role="alert"></p><button class="button button-primary" type="submit">Create Goal</button></form>`, (event, form, modal, close) => {
     event.preventDefault();
     if (!form.reportValidity()) return;
     const data = new FormData(form);
@@ -687,12 +687,12 @@ function openGoalDialog() {
         return showFormError(form.querySelector(".form-message"), "Use a valid HTTPS image link or choose a photo file.");
       }
     }
-    const state = getDemoState();
+    const state = getVaultState();
     state.goals.push({ name: String(data.get("name")).trim(), target: Number(data.get("target")), saved: 0, photo, createdAt: new Date().toISOString() });
-    if (!saveDemoState(state)) return;
+    if (!saveVaultState(state)) return;
     close();
     render();
-    notify("Your demo savings goal was created.");
+    notify("Your savings goal was created.");
   });
   const fileInput = host.querySelector("[name='photoFile']");
   host.querySelector("[data-photo-trigger]").addEventListener("click", () => fileInput.click());
@@ -720,7 +720,7 @@ function openGoalDialog() {
 }
 
 function openGoalDetails(index) {
-  const goal = getDemoState().goals[index];
+  const goal = getVaultState().goals[index];
   if (!goal) return notify("This savings goal is no longer available.");
   const progress = goal.target ? Math.min(100, Math.round((goal.saved / goal.target) * 100)) : 0;
   const { host, close } = openDialog(goal.name, `<div class="goal-details"><p>${money(goal.saved)} saved of ${money(goal.target)}</p><div class="goal-track"><div class="goal-progress" style="width:${progress}%"></div></div><p>${progress}% of your target reached.</p><div class="dialog-actions"><button class="button button-secondary" type="button" data-cancel>Close</button><button class="button button-primary" type="button" data-contribute>Add savings</button></div><button class="delete-goal" type="button" data-delete>Delete goal</button></div>`);
@@ -731,32 +731,32 @@ function openGoalDetails(index) {
   });
   host.querySelector("[data-delete]").addEventListener("click", () => {
     close();
-    const confirmation = openDialog("Delete savings goal?", `<p class="dialog-note">This removes the goal and its saved progress from this browser’s demo.</p><div class="dialog-actions"><button class="button button-secondary" type="button" data-cancel>Keep goal</button><button class="button delete-confirm" type="button" data-confirm-delete>Delete goal</button></div>`);
+    const confirmation = openDialog("Delete savings goal?", `<p class="dialog-note">This removes the goal and its saved progress from this browser.</p><div class="dialog-actions"><button class="button button-secondary" type="button" data-cancel>Keep goal</button><button class="button delete-confirm" type="button" data-confirm-delete>Delete goal</button></div>`);
     confirmation.host.querySelector("[data-cancel]").addEventListener("click", () => confirmation.host.querySelector(".modal-close").click());
     confirmation.host.querySelector("[data-confirm-delete]").addEventListener("click", () => {
-      const state = getDemoState();
+      const state = getVaultState();
       state.goals.splice(index, 1);
-      if (!saveDemoState(state)) return;
+      if (!saveVaultState(state)) return;
       confirmation.close();
       render();
-      notify("Demo savings goal deleted.");
+      notify("Savings goal deleted.");
     });
   });
 }
 
 function openPaymentDialog(initialType) {
   let transactionType = initialType;
-  const state = getDemoState();
+  const state = getVaultState();
   const goalOptions = state.goals.map((goal, index) => `<option value="${index}">${escapeHtml(goal.name)}</option>`).join("");
-  const { host } = openDialog(initialType === "deposit" ? "Add Demo Funds" : "Withdraw Demo Funds", `<form class="dialog-form payment-form">
+  const { host } = openDialog(initialType === "deposit" ? "Add Funds" : "Withdraw Funds", `<form class="dialog-form payment-form">
     <div class="dialog-tabs"><button type="button" data-type="deposit" class="${initialType === "deposit" ? "active" : ""}">Deposit</button><button type="button" data-type="withdraw" class="${initialType === "withdraw" ? "active" : ""}">Withdraw</button></div>
     <label class="destination-label">Destination<select name="destination"><option value="wallet">General Wallet</option>${goalOptions}</select></label>
     <label>Amount (KSh)<input name="amount" type="number" min="1" step="1" inputmode="numeric" placeholder="e.g. 1,000" required /></label>
-    <p class="dialog-note payment-note">Demo only — this simulates funding the selected destination in your local demo. No payment is charged and no card or M-Pesa details are collected.</p><p class="form-message" role="alert"></p><button class="button button-primary" type="submit">Simulate ${initialType}</button></form>`, (event, form, modal, close) => {
+    <p class="dialog-note payment-note">This simulates funding the selected destination in your browser. No payment is charged and no card or M-Pesa details are collected.</p><p class="form-message" role="alert"></p><button class="button button-primary" type="submit">Simulate ${initialType}</button></form>`, (event, form, modal, close) => {
     event.preventDefault();
     if (!form.reportValidity()) return;
     const amount = Number(new FormData(form).get("amount"));
-    const data = getDemoState();
+    const data = getVaultState();
     const destination = String(new FormData(form).get("destination"));
     if (!Number.isSafeInteger(amount) || amount <= 0) {
       showFormError(form.querySelector(".form-message"), "Enter a whole amount greater than zero.");
@@ -767,7 +767,7 @@ function openPaymentDialog(initialType) {
       return;
     }
     if (transactionType === "withdraw" && amount > data.balance) {
-      showFormError(form.querySelector(".form-message"), "The demo wallet doesn't have enough funds for this withdrawal.");
+      showFormError(form.querySelector(".form-message"), "The wallet doesn't have enough funds for this withdrawal.");
       return;
     }
     if (destination !== "wallet" && transactionType === "deposit") {
@@ -778,11 +778,11 @@ function openPaymentDialog(initialType) {
       data.balance += transactionType === "deposit" ? amount : -amount;
     }
     const goalName = destination === "wallet" ? "" : data.goals[Number(destination)]?.name;
-    data.transactions.push({ type: transactionType, amount, label: transactionType === "deposit" ? `Demo deposit${goalName ? ` · ${goalName}` : ""}` : "Demo withdrawal", date: new Date().toLocaleString() });
-    if (!saveDemoState(data)) return;
+    data.transactions.push({ type: transactionType, amount, label: transactionType === "deposit" ? `Deposit${goalName ? ` · ${goalName}` : ""}` : "Withdrawal", date: new Date().toLocaleString() });
+    if (!saveVaultState(data)) return;
     close();
     render();
-    notify(`Demo ${transactionType} complete.`);
+    notify(`${transactionType.charAt(0).toUpperCase() + transactionType.slice(1)} complete.`);
   });
   const form = host.querySelector("form");
   const destination = form.querySelector("[name='destination']");
@@ -796,47 +796,47 @@ function openPaymentDialog(initialType) {
     });
     form.querySelector(".destination-label").firstChild.textContent = transactionType === "deposit" ? "Destination" : "Source";
     form.querySelector(".payment-note").textContent = transactionType === "deposit"
-      ? "Demo only — this simulates funding the selected destination in your local demo. No payment is charged and no card or M-Pesa details are collected."
-      : "Demo only — withdrawals reduce your local demo balance. No money is transferred.";
+      ? "This simulates funding the selected destination in your browser. No payment is charged and no card or M-Pesa details are collected."
+      : "Withdrawals reduce your local balance. No money is transferred.";
     form.querySelector("[type='submit']").textContent = `Simulate ${transactionType}`;
   }));
 }
 
 function openContributionDialog(index) {
-  const state = getDemoState();
+  const state = getVaultState();
   const goal = state.goals[index];
   if (!goal) return;
-  openDialog(`Add to ${goal.name}`, `<form class="dialog-form"><label>Amount (KSh)<input name="amount" type="number" min="1" step="1" required /></label><p class="dialog-note">This updates your local demo goal only.</p><p class="form-message" role="alert"></p><button class="button button-primary" type="submit">Add savings</button></form>`, (event, form, host, close) => {
+  openDialog(`Add to ${goal.name}`, `<form class="dialog-form"><label>Amount (KSh)<input name="amount" type="number" min="1" step="1" required /></label><p class="dialog-note">This updates your local goal only.</p><p class="form-message" role="alert"></p><button class="button button-primary" type="submit">Add savings</button></form>`, (event, form, host, close) => {
     event.preventDefault();
     if (!form.reportValidity()) return;
     const amount = Number(new FormData(form).get("amount"));
-    const latest = getDemoState();
-    if (amount > latest.balance) return showFormError(form.querySelector(".form-message"), "The demo wallet doesn't have enough funds.");
+    const latest = getVaultState();
+    if (amount > latest.balance) return showFormError(form.querySelector(".form-message"), "The wallet doesn't have enough funds.");
     latest.balance -= amount;
     latest.goals[index].saved += amount;
     latest.transactions.push({ type: "withdraw", amount, label: `Goal contribution · ${goal.name}`, date: new Date().toLocaleString() });
-    if (!saveDemoState(latest)) return;
+    if (!saveVaultState(latest)) return;
     close();
     render();
-    notify("Demo savings added to your goal.");
+    notify("Savings added to your goal.");
   });
 }
 
 function openInvestDialog(fund) {
-  openDialog(`Invest in ${fund.name}`, `<form class="dialog-form"><p class="investment-summary">Minimum investment <strong>${money(fund.minimum)}</strong><span>Projected APY ${fund.apy} · Risk ${fund.risk}</span></p><label>Investment amount (KSh)<input name="amount" type="number" min="${fund.minimum}" step="1" required /></label><p class="dialog-note">Demo only — this will not place a real investment.</p><p class="form-message" role="alert"></p><button class="button button-primary" type="submit">Review demo investment</button></form>`, (event, form, host, close) => {
+  openDialog(`Invest in ${fund.name}`, `<form class="dialog-form"><p class="investment-summary">Minimum investment <strong>${money(fund.minimum)}</strong><span>Projected APY ${fund.apy} · Risk ${fund.risk}</span></p><label>Investment amount (KSh)<input name="amount" type="number" min="${fund.minimum}" step="1" required /></label><p class="dialog-note">This will not place a real investment.</p><p class="form-message" role="alert"></p><button class="button button-primary" type="submit">Review investment</button></form>`, (event, form, host, close) => {
     event.preventDefault();
     if (!form.reportValidity()) return;
     const amount = Number(new FormData(form).get("amount"));
-    const state = getDemoState();
+    const state = getVaultState();
     if (amount < fund.minimum) return showFormError(form.querySelector(".form-message"), `The minimum investment is ${money(fund.minimum)}.`);
-    if (amount > state.balance) return showFormError(form.querySelector(".form-message"), "The demo wallet doesn't have enough funds.");
+    if (amount > state.balance) return showFormError(form.querySelector(".form-message"), "The wallet doesn't have enough funds.");
     state.balance -= amount;
     state.investments.push({ fund: fund.name, amount, date: new Date().toISOString() });
-    state.transactions.push({ type: "withdraw", amount, label: `Demo investment · ${fund.name}`, date: new Date().toLocaleString() });
-    if (!saveDemoState(state)) return;
+    state.transactions.push({ type: "withdraw", amount, label: `Investment · ${fund.name}`, date: new Date().toLocaleString() });
+    if (!saveVaultState(state)) return;
     close();
     render();
-    notify("Demo investment recorded locally.");
+    notify("Investment recorded locally.");
   });
 }
 
@@ -853,7 +853,7 @@ function openProfileDialog() {
     }
     close();
     render();
-    notify("Demo profile updated.");
+    notify("Profile updated.");
   });
   host.querySelector("[data-cancel]").addEventListener("click", () => host.querySelector(".modal-close").click());
 }
@@ -866,7 +866,7 @@ function openPasswordDialog() {
     const message = form.querySelector(".form-message");
     const profile = getProfile();
     if (data.get("next") !== data.get("confirm")) return showFormError(message, "New passwords do not match.");
-    if (!profile?.passwordSalt || !profile?.passwordHash) return showFormError(message, "This account has no demo password. Register again to create a new demo account.");
+    if (!profile?.passwordSalt || !profile?.passwordHash) return showFormError(message, "This account has no password. Create an account to set a new password.");
     try {
       const currentHash = await hashPassword(String(data.get("current")), profile.passwordSalt);
       if (!passwordsMatch(currentHash, profile.passwordHash)) return showFormError(message, "Your current password is incorrect.");
@@ -874,7 +874,7 @@ function openPasswordDialog() {
       const passwordHash = await hashPassword(String(data.get("next")), passwordSalt);
       localStorage.setItem(storageKey, JSON.stringify({ ...profile, passwordSalt, passwordHash }));
       close();
-      notify("Demo password updated.");
+      notify("Password updated.");
     } catch {
       showFormError(message, "Secure password processing or browser storage failed. Please try again.");
     }
@@ -883,8 +883,8 @@ function openPasswordDialog() {
 }
 
 function openPlanDialog() {
-  const profile = getProfile() || { name: "Demo Member", email: "demo@vault.test", plan: "Gold" };
-  const { host } = openDialog("Manage Subscription", `<form class="dialog-form"><label>Select Plan<select name="plan">${["Basic", "Premium", "Gold"].map((plan) => `<option ${plan === profile.plan ? "selected" : ""}>${plan}</option>`).join("")}</select></label><div class="plan-choices"><article><strong>Basic</strong><span>Secure deposits · Global withdrawals</span></article><article><strong>Premium</strong><span>Custom goals · Standing orders</span></article><article><strong>Gold</strong><span>Premium access · Money market funds</span></article></div><p class="dialog-note">Plan changes only update your local demo profile.</p><p class="form-message" role="alert"></p><div class="dialog-actions"><button class="button button-secondary" type="button" data-cancel>Cancel</button><button class="button button-primary" type="submit">Save Plan</button></div></form>`, (event, form, host, close) => {
+  const profile = getProfile() || { name: "Vault Member", email: "member@vault.com", plan: "Gold" };
+  const { host } = openDialog("Manage Subscription", `<form class="dialog-form"><label>Select Plan<select name="plan">${["Basic", "Premium", "Gold"].map((plan) => `<option ${plan === profile.plan ? "selected" : ""}>${plan}</option>`).join("")}</select></label><div class="plan-choices"><article><strong>Basic</strong><span>Secure deposits · Global withdrawals</span></article><article><strong>Premium</strong><span>Custom goals · Standing orders</span></article><article><strong>Gold</strong><span>Premium access · Money market funds</span></article></div><p class="dialog-note">Plan changes only update your local profile.</p><p class="form-message" role="alert"></p><div class="dialog-actions"><button class="button button-secondary" type="button" data-cancel>Cancel</button><button class="button button-primary" type="submit">Save Plan</button></div></form>`, (event, form, host, close) => {
     event.preventDefault();
     const data = new FormData(form);
     try {
@@ -894,7 +894,7 @@ function openPlanDialog() {
     }
     close();
     render();
-    notify("Demo plan updated.");
+    notify("Plan updated.");
   });
   host.querySelector("[data-cancel]").addEventListener("click", () => host.querySelector(".modal-close").click());
 }
@@ -904,15 +904,15 @@ function closeDialog() {
 }
 
 function completeSprint() {
-  const state = getDemoState();
+  const state = getVaultState();
   if (state.sprintDate === localDateKey()) return notify("Your daily sprint is already complete.");
   state.balance += 1000;
   state.streak += 1;
   state.sprintDate = localDateKey();
-  state.transactions.push({ type: "deposit", amount: 1000, label: "Daily sprint · demo", date: new Date().toLocaleString() });
-  if (saveDemoState(state)) {
+  state.transactions.push({ type: "deposit", amount: 1000, label: "Daily sprint", date: new Date().toLocaleString() });
+  if (saveVaultState(state)) {
     render();
-    notify("Daily sprint complete. KSh 1,000 added to your demo wallet.");
+    notify("Daily sprint complete. KSh 1,000 added to your wallet.");
   }
 }
 
