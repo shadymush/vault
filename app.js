@@ -1,7 +1,34 @@
+import { initializeApp } from "https://www.gstatic.com/firebasejs/13.2.0/firebase-app.js";
+import {
+  browserLocalPersistence,
+  createUserWithEmailAndPassword,
+  EmailAuthProvider,
+  getAuth,
+  onAuthStateChanged,
+  reauthenticateWithCredential,
+  setPersistence,
+  signInWithEmailAndPassword,
+  signOut,
+  updatePassword,
+  updateProfile,
+} from "https://www.gstatic.com/firebasejs/13.2.0/firebase-auth.js";
+
 const app = document.querySelector("#app");
+app.classList.add("app-shell");
 const storageKey = "vault-profile";
 const stateKey = "vault-state";
-const sessionKey = "vault-session";
+const firebaseApp = initializeApp({
+  apiKey: "AIzaSyA6VTdjXIqFU8sSummIqDm1OyVQj3fIvOE",
+  authDomain: "vault-app-e609b.firebaseapp.com",
+  projectId: "vault-app-e609b",
+  storageBucket: "vault-app-e609b.firebasestorage.app",
+  messagingSenderId: "1304669945",
+  appId: "1:1304669945:web:35d7d8aeb9744e43673c28",
+});
+const auth = getAuth(firebaseApp);
+let currentUser = null;
+let authInitialized = false;
+let authActionInProgress = false;
 
 const icons = {
   bolt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m13 2-3 9h8L9 22l3-9H4l9-11Z"/></svg>',
@@ -94,7 +121,7 @@ function renderLanding() {
             <ul><li>${icons.check}Custom saving profiles</li><li>${icons.check}Target-based goals</li><li>${icons.check}Automated standing orders</li></ul>
           </article>
           <article class="plan-card">
-            <span class="plan-tag">Coming soon</span>
+            <span class="plan-tag">Vault Prime access</span>
             <div class="plan-icon">${icons.chart}</div>
             <h3>Gold</h3>
             <ul><li>${icons.check}Everything in Premium</li><li>${icons.check}High-yield money market</li><li>${icons.check}Priority support</li></ul>
@@ -124,7 +151,7 @@ function renderAuth(mode) {
             </div>
             <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email" required /></div>
           ` : `
-            <div class="field"><label for="email">Email or Phone Number</label><input id="email" name="email" autocomplete="username" required /></div>
+              <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="username" required /></div>
           `}
           <div class="field">
             <label for="password">Password</label>
@@ -141,7 +168,7 @@ function renderAuth(mode) {
           <button class="button button-primary auth-submit" type="submit">${registering ? "Continue to Vault" : "Sign In"}</button>
         </form>
         <p class="auth-switch">${registering ? 'Already have an account? <a class="text-link" href="#/login">Login</a>' : 'Don’t have an account? <a class="text-link" href="#/register">Register</a>'}</p>
-        <p class="account-note">This account is stored in this browser only. Your password is never stored in plain text. This is not secure production authentication.</p>
+        <p class="account-note">Sign-in is securely managed by Firebase. Your plan and dashboard data are currently stored in this browser.</p>
       </section>
     </main>`;
 
@@ -162,79 +189,55 @@ function renderAuth(mode) {
     message.classList.remove("visible");
     if (!form.reportValidity()) return;
     submit.disabled = true;
+    let firebaseAuthSucceeded = false;
     try {
       const data = new FormData(form);
-      const passwordValue = String(data.get("password"));
+      const email = String(data.get("email")).trim().toLowerCase();
+      const password = String(data.get("password"));
+      await setPersistence(auth, browserLocalPersistence);
+      authActionInProgress = true;
       if (registering) {
         const name = String(data.get("name")).trim();
         if (name.length < 2) {
           showFormError(message, "Please enter your full name.");
           return;
         }
-        const salt = createPasswordSalt();
-        const passwordHash = await hashPassword(passwordValue, salt);
-        localStorage.setItem(storageKey, JSON.stringify({
+        const credential = await createUserWithEmailAndPassword(auth, email, password);
+        currentUser = credential.user;
+        firebaseAuthSucceeded = true;
+        await updateProfile(credential.user, { displayName: name });
+        ensureUserProfile(credential.user);
+        saveProfile({
           name,
-          email: String(data.get("email")).trim(),
+          email,
           plan: String(data.get("plan")),
           phone: String(data.get("phone")).trim(),
-          passwordSalt: salt,
-          passwordHash,
-        }));
+        }, credential.user);
       } else {
-        const identifier = String(data.get("email")).trim().toLowerCase();
-        const saved = getProfile();
-        const matchesIdentifier = saved && [saved.email, saved.phone].some((value) => value?.trim().toLowerCase() === identifier);
-        if (!matchesIdentifier) {
-          showFormError(message, "That email or phone number doesn't match an account. Create one to get started.");
-          return;
-        }
-        if (!saved.passwordSalt || !saved.passwordHash) {
-          showFormError(message, "This account needs a password. Create an account to set a new password.");
-          return;
-        }
-        const passwordHash = await hashPassword(passwordValue, saved.passwordSalt);
-        if (!passwordsMatch(passwordHash, saved.passwordHash)) {
-          showFormError(message, "Incorrect password. Please try again.");
-          return;
-        }
+        const credential = await signInWithEmailAndPassword(auth, email, password);
+        currentUser = credential.user;
+        firebaseAuthSucceeded = true;
+        ensureUserProfile(credential.user);
       }
-      localStorage.setItem(sessionKey, "active");
       window.location.hash = "/dashboard";
     } catch (error) {
-      showFormError(message, error instanceof DOMException && error.name === "QuotaExceededError"
-        ? "Your browser storage is full. Clear some space and try again."
-        : "Secure password processing or browser storage failed. Please try again.");
+      console.error("Firebase authentication failed", error);
+      if (firebaseAuthSucceeded && currentUser) {
+        try {
+          ensureUserProfile(currentUser);
+        } catch (profileError) {
+          console.error("Could not save the signed-in account profile", profileError);
+        }
+        window.location.hash = "/dashboard";
+        notify("You’re signed in, but some profile details could not be saved in this browser.");
+      } else {
+        showFormError(message, firebaseAuthErrorMessage(error, registering ? "Account creation" : "Sign in"));
+      }
     } finally {
+      authActionInProgress = false;
       submit.disabled = false;
     }
   });
-}
-
-function createPasswordSalt() {
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-async function hashPassword(password, salt) {
-  if (!crypto.subtle) throw new Error("Secure password hashing is unavailable.");
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
-  const bits = await crypto.subtle.deriveBits({
-    name: "PBKDF2",
-    salt: new TextEncoder().encode(salt),
-    iterations: 210000,
-    hash: "SHA-256",
-  }, key, 256);
-  return Array.from(new Uint8Array(bits), (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-function passwordsMatch(actual, expected) {
-  if (actual.length !== expected.length) return false;
-  let difference = 0;
-  for (let index = 0; index < actual.length; index += 1) {
-    difference |= actual.charCodeAt(index) ^ expected.charCodeAt(index);
-  }
-  return difference === 0;
 }
 
 function showFormError(message, text) {
@@ -242,13 +245,73 @@ function showFormError(message, text) {
   message.classList.add("visible");
 }
 
-function getProfile() {
+function profileStorageKey(user) {
+  return `${storageKey}:${user.uid}`;
+}
+
+function getProfile(user = currentUser) {
+  if (!user) return null;
   try {
-    const value = localStorage.getItem(storageKey);
+    const value = localStorage.getItem(profileStorageKey(user));
     return value ? JSON.parse(value) : null;
-  } catch {
+  } catch (error) {
+    console.error("Could not read the saved account profile", error);
     return null;
   }
+}
+
+function saveProfile(profile, user = currentUser) {
+  if (!user) throw new Error("A signed-in Firebase user is required to save the profile.");
+  localStorage.setItem(profileStorageKey(user), JSON.stringify({ ...profile, uid: user.uid }));
+}
+
+function ensureUserProfile(user) {
+  const existing = getProfile(user);
+  if (existing) return existing;
+
+  let legacy = null;
+  try {
+    const value = localStorage.getItem(storageKey);
+    legacy = value ? JSON.parse(value) : null;
+  } catch (error) {
+    console.error("Could not read a legacy browser profile", error);
+  }
+  const isMatchingLegacyProfile = typeof legacy?.email === "string"
+    && legacy.email.trim().toLowerCase() === user.email?.toLowerCase();
+  const profile = {
+    name: isMatchingLegacyProfile ? legacy.name : user.displayName || user.email?.split("@")[0] || "Vault Member",
+    email: user.email || "",
+    phone: isMatchingLegacyProfile ? legacy.phone || "" : user.phoneNumber || "",
+    plan: isMatchingLegacyProfile && ["Basic", "Premium", "Gold"].includes(legacy.plan) ? legacy.plan : "Basic",
+  };
+  saveProfile(profile, user);
+  if (isMatchingLegacyProfile) localStorage.removeItem(storageKey);
+  return profile;
+}
+
+function firebaseAuthErrorMessage(error, action) {
+  const messages = {
+    "auth/email-already-in-use": "An account already exists for this email. Sign in instead.",
+    "auth/invalid-email": "Enter a valid email address.",
+    "auth/invalid-credential": "Email or password is incorrect.",
+    "auth/user-disabled": "This account has been disabled. Contact support.",
+    "auth/weak-password": "Choose a stronger password with at least 8 characters.",
+    "auth/operation-not-allowed": "Email/password sign-in is disabled. Enable it in Firebase Authentication settings.",
+    "auth/unauthorized-domain": "This site is not authorized in Firebase. Add its domain in Firebase Authentication settings.",
+    "auth/too-many-requests": "Too many attempts. Wait a while and try again.",
+    "auth/network-request-failed": "Could not reach Firebase. Check your internet connection and try again.",
+    "auth/requires-recent-login": "Please sign in again before changing your password.",
+  };
+  return messages[error?.code] || `${action} failed. Please try again.`;
+}
+
+function getAccountPlan() {
+  return getProfile()?.plan || "Basic";
+}
+
+function hasPlanAccess(requiredPlan) {
+  const tiers = { Basic: 0, Premium: 1, Gold: 2 };
+  return (tiers[getAccountPlan()] ?? 0) >= (tiers[requiredPlan] ?? 0);
 }
 
 const funds = [
@@ -299,7 +362,7 @@ const markets = {
 
 function getVaultState() {
   try {
-    const saved = JSON.parse(localStorage.getItem(stateKey) || "{}");
+    const saved = JSON.parse(localStorage.getItem(stateStorageKey()) || "{}");
     return {
       balance: Number(saved.balance) || 0,
       goals: Array.isArray(saved.goals) ? saved.goals : [],
@@ -308,20 +371,25 @@ function getVaultState() {
       sprintDate: saved.sprintDate || "",
       investments: Array.isArray(saved.investments) ? saved.investments : [],
       watchlist: Array.isArray(saved.watchlist) ? saved.watchlist : [],
+      standingOrders: Array.isArray(saved.standingOrders) ? saved.standingOrders : [],
     };
   } catch {
-    return { balance: 0, goals: [], transactions: [], streak: 0, sprintDate: "", investments: [] };
+    return { balance: 0, goals: [], transactions: [], streak: 0, sprintDate: "", investments: [], watchlist: [], standingOrders: [] };
   }
 }
 
 function saveVaultState(state) {
   try {
-    localStorage.setItem(stateKey, JSON.stringify(state));
+    localStorage.setItem(stateStorageKey(), JSON.stringify(state));
     return true;
   } catch {
     notify("Your browser couldn't save this change. Check local storage settings.");
     return false;
   }
+}
+
+function stateStorageKey(user = currentUser) {
+  return user ? `${stateKey}:${user.uid}` : stateKey;
 }
 
 function money(amount) {
@@ -333,11 +401,16 @@ function dashboardLayout(route, title, content) {
     ["dashboard", "Overview", icons.grid],
     ["dashboard/savings", "Hazina", icons.wallet],
     ["dashboard/investments", "Investments", icons.chart],
+    ["dashboard/standing-orders", "Standing Orders", icons.clock],
     ["dashboard/transactions", "Transactions", icons.send],
     ["dashboard/settings", "Settings", icons.settings],
   ];
   const profile = getProfile();
-  const plan = profile?.plan || "Gold";
+  const plan = profile?.plan || "Basic";
+  document.documentElement.dataset.plan = plan.toLowerCase();
+  const planDescription = plan === "Premium"
+    ? "Savings and standing orders"
+    : plan === "Gold" ? "All features unlocked" : "Savings essentials";
   app.innerHTML = `
     <main class="dashboard">
       <header class="vault-header">
@@ -352,10 +425,15 @@ function dashboardLayout(route, title, content) {
           ${brand()}
           <p class="nav-label">Workspace</p>
           <nav class="side-nav" aria-label="Dashboard">
-            ${navItems.map(([path, label, icon]) => `<a href="#/${path}" class="${route === path ? "active" : ""}" ${route === path ? 'aria-current="page"' : ""}>${icon}${label}</a>`).join("")}
+            ${navItems.map(([path, label, icon]) => {
+              const locked = path === "dashboard/investments" && !hasPlanAccess("Gold")
+                || path === "dashboard/standing-orders" && !hasPlanAccess("Premium");
+              const badge = locked ? `<span class="nav-lock">${path === "dashboard/investments" ? "Gold" : "Premium"}</span>` : "";
+              return `<a href="#/${path}" class="${route === path ? "active" : ""} ${locked ? "locked" : ""}" ${route === path ? 'aria-current="page"' : ""}>${icon}${label}${badge}</a>`;
+            }).join("")}
           </nav>
           <p class="nav-label">Account</p>
-          <div class="side-bottom"><strong>${escapeHtml(plan)} account</strong><p>Secure your future with Vault.</p><a href="#/dashboard/settings">Manage account →</a></div>
+          <div class="side-bottom"><strong>${escapeHtml(plan)} account</strong><p>${escapeHtml(planDescription)}.</p><a href="#/dashboard/settings">Manage account →</a></div>
           <button class="side-logout" type="button" data-action="logout">${icons.close}Logout</button>
         </aside>
         <section class="dashboard-main">
@@ -374,11 +452,17 @@ function dashboardLayout(route, title, content) {
     mobileNav.hidden = expanded;
   });
   app.querySelectorAll("[data-action='logout']").forEach((button) => {
-    button.addEventListener("click", (event) => {
+    button.addEventListener("click", async (event) => {
       if (button.tagName === "A") event.preventDefault();
-      localStorage.removeItem(sessionKey);
-      window.location.hash = "/login";
-      notify("You have signed out of this account.");
+      try {
+        await signOut(auth);
+        currentUser = null;
+        window.location.hash = "/login";
+        notify("You have signed out of this account.");
+      } catch (error) {
+        console.error("Firebase sign-out failed", error);
+        notify(firebaseAuthErrorMessage(error, "Sign out"));
+      }
     });
   });
 }
@@ -387,6 +471,7 @@ function renderDashboard() {
   const route = window.location.hash.replace(/^#\/?/, "").split("?")[0];
   if (route === "dashboard/savings") return renderSavings();
   if (route === "dashboard/investments") return renderInvestments();
+  if (route === "dashboard/standing-orders") return renderStandingOrders();
   if (route === "dashboard/transactions") return renderTransactions();
   if (route === "dashboard/settings") return renderSettings();
   renderOverview();
@@ -396,11 +481,12 @@ function renderOverview() {
   const state = getVaultState();
   const profile = getProfile();
   const name = profile?.name || "";
-  const plan = profile?.plan || "Gold";
+  const plan = profile?.plan || "Basic";
   const today = localDateKey();
   const completed = state.sprintDate === today;
   const firstName = name.split(/\s+/)[0];
   const goals = state.goals.slice(0, 3);
+  const activeOrders = (state.standingOrders || []).filter((order) => order.active);
   const content = `
     <div class="workspace-heading">
       <div><p class="workspace-label">Workspace</p><h1>Welcome back,${firstName ? ` ${escapeHtml(firstName)}` : ""}</h1></div>
@@ -409,7 +495,7 @@ function renderOverview() {
     <div class="account-overview">
       <section class="balance-card" aria-label="Live balance">
         <div class="balance-top"><div><p class="balance-label">Live Balance</p><h2 class="balance-value"><span>KSh</span> ${state.balance.toLocaleString("en-KE")}</h2></div><div class="balance-emblem">${icons.wallet}</div></div>
-        <div class="balance-bottom"><div class="security-level"><p>Security Level</p><strong>Ultimate ${escapeHtml(plan)}</strong><span>${escapeHtml(plan.toLowerCase())}</span></div>
+        <div class="balance-bottom"><div class="security-level"><p>Security Level</p><strong>${plan === "Premium" ? "Enhanced" : `Ultimate ${escapeHtml(plan)}`}</strong><span>${escapeHtml(plan.toLowerCase())}</span></div>
           <div class="balance-actions"><button class="button button-primary" data-action="deposit">${icons.download}Deposit Funds</button><button class="button button-secondary" data-action="withdraw">${icons.arrow}Withdraw</button></div>
         </div>
       </section>
@@ -428,15 +514,22 @@ function renderOverview() {
         ${goals.length ? goals.map((goal) => `<div class="goal-item"><div class="goal-head"><span>${escapeHtml(goal.name)}</span><span>${money(goal.saved)} / ${money(goal.target)}</span></div><div class="goal-track"><div class="goal-progress" style="width:${Math.min(100, goal.target ? (goal.saved / goal.target) * 100 : 0)}%"></div></div></div>`).join("") : '<p class="empty-inline">Create a savings goal and start making progress.</p>'}
       </section>
     </div>
-    <section class="funds-section">
+    ${hasPlanAccess("Premium") ? `<section class="standing-preview">
+      <div><span class="preview-icon">${icons.clock}</span><div><p>Premium feature</p><h2>Standing Orders</h2><span>${activeOrders.length} active schedule${activeOrders.length === 1 ? "" : "s"} · automate your saving routine</span></div></div>
+      <a class="button button-secondary" href="#/dashboard/standing-orders">Manage schedules ${icons.arrow}</a>
+    </section>` : ""}
+    ${hasPlanAccess("Gold") ? `<section class="funds-section">
       <div class="section-title-row funds-title"><div class="section-icon">${icons.chart}</div><div><h2>Vault Prime Funds</h2><p>Institutional-Grade Yields</p></div><a class="section-link" href="#/dashboard/investments">Explore markets →</a></div>
       <div class="funds-layout"><article class="selected-fund"><div class="selected-fund-heading"><div><p class="active-selection">Active Selection</p><h3 id="selected-fund-name"></h3></div><span class="fund-shield">${icons.shield}</span></div><p class="fund-description" id="selected-fund-description"></p>
         <div class="fund-metrics"><div><p>Projected APY</p><strong id="selected-fund-apy"></strong></div><div><p>Risk Profile</p><strong id="selected-fund-risk"></strong></div></div>
         <button type="button" class="button invest-button" data-action="invest">${icons.chart}Invest Now ${icons.arrow}</button>
       </article><div class="market-list"><h3>Available Markets</h3><div id="fund-options"></div></div></div>
-    </section>`;
+    </section>` : `<section class="tier-locked-card">
+      <span class="locked-emblem">${icons.shield}</span><div><p>Gold Exclusive</p><h2>Investments are waiting in Gold</h2><span>Explore Vault Prime funds and global markets when you upgrade.</span></div>
+      <button class="button button-primary" type="button" data-action="manage-plan" data-plan="Gold">Explore Gold ${icons.arrow}</button>
+    </section>`}`;
   dashboardLayout("dashboard", "Overview", content);
-  bindFundPicker();
+  if (hasPlanAccess("Gold")) bindFundPicker();
   bindDashboardActions();
   startCountdown();
 }
@@ -464,7 +557,75 @@ function renderSavings() {
   startCountdown();
 }
 
+function renderStandingOrders() {
+  const state = getVaultState();
+  if (!hasPlanAccess("Premium")) {
+    const content = `<div class="workspace-heading"><div><p class="workspace-label">Premium feature</p><h1>Standing Orders</h1><p class="page-subtitle">Put your savings on a schedule.</p></div></div>
+      <section class="tier-locked-card"><span class="locked-emblem">${icons.clock}</span><div><p>Premium feature</p><h2>Make saving automatic</h2><span>Upgrade to Premium to create and manage standing orders.</span></div><button class="button button-primary" data-action="manage-plan" data-plan="Premium">Explore Premium ${icons.arrow}</button></section>`;
+    dashboardLayout("dashboard/standing-orders", "Standing Orders", content);
+    bindDashboardActions();
+    return;
+  }
+  const orders = state.standingOrders || [];
+  const activeOrders = orders.filter((order) => order.active);
+  const monthlyTotal = activeOrders.reduce((total, order) => total + Number(order.amount || 0) * (order.frequency === "weekly" ? 52 / 12 : 1), 0);
+  const content = `
+    <div class="workspace-heading"><div><p class="workspace-label">Premium / Automation</p><h1>Standing Orders</h1><p class="page-subtitle">Build a consistent savings habit with recurring schedules.</p></div><button class="button button-primary" data-action="create-standing-order">${icons.plus}Create schedule</button></div>
+    <div class="standing-stats">
+      <article><span class="standing-stat-icon">${icons.clock}</span><p>Active schedules</p><strong>${activeOrders.length}</strong><small>of ${orders.length} total</small></article>
+      <article><span class="standing-stat-icon">${icons.wallet}</span><p>Planned monthly saving</p><strong>${money(monthlyTotal)}</strong><small>estimated from active schedules</small></article>
+      <article><span class="standing-stat-icon">${icons.target}</span><p>Destinations</p><strong>${new Set(activeOrders.map((order) => order.destination)).size}</strong><small>wallets and savings goals</small></article>
+    </div>
+    <div class="standing-list-heading"><div><h2>Your schedules</h2><p>Pause or remove a schedule whenever you need.</p></div>${orders.length ? `<span>${orders.length} schedule${orders.length === 1 ? "" : "s"}</span>` : ""}</div>
+    ${orders.length ? `<div class="standing-order-list">${orders.map((order) => {
+      const destination = order.destination === "wallet"
+        ? "General wallet"
+        : state.goals.find((goal, index) => standingOrderGoalKey(goal, index) === order.destination)?.name || "Removed savings goal";
+      const nextDate = getNextStandingOrderDate(order);
+      return `<article class="standing-order-card ${order.active ? "" : "paused"}">
+        <div class="standing-order-mark">${icons.send}</div>
+        <div class="standing-order-info"><div class="standing-order-title"><h3>${escapeHtml(order.name)}</h3><span class="order-status ${order.active ? "active" : "paused"}">${order.active ? "Active" : "Paused"}</span></div>
+          <p>${order.frequency === "weekly" ? "Weekly" : "Monthly"} · ${escapeHtml(destination)}</p><small>${order.active ? `Next schedule ${nextDate ? nextDate.toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric" }) : "not set"}` : "Paused until you resume it"}</small></div>
+        <strong class="standing-order-amount">${money(order.amount)}<small>per ${order.frequency === "weekly" ? "week" : "month"}</small></strong>
+        <div class="standing-order-actions"><button class="button button-secondary" type="button" data-order-toggle="${escapeHtml(order.id)}">${order.active ? "Pause" : "Resume"}</button><button class="icon-button" type="button" aria-label="Delete ${escapeHtml(order.name)}" data-order-delete="${escapeHtml(order.id)}">${icons.close}</button></div>
+      </article>`;
+    }).join("")}</div>` : `<div class="empty-state standing-empty">${icons.clock}<h3>Start with a schedule</h3><p>Create a recurring savings reminder for your wallet or one of your goals.</p><button class="button button-primary" data-action="create-standing-order">${icons.plus}Create standing order</button></div>`}
+    <p class="standing-disclaimer">${icons.shield}Schedules are stored in this browser for this demo. They do not move or charge real money automatically.</p>`;
+  dashboardLayout("dashboard/standing-orders", "Standing Orders", content);
+  bindDashboardActions();
+}
+
+function getNextStandingOrderDate(order) {
+  const next = new Date(`${order.startDate}T00:00:00`);
+  if (Number.isNaN(next.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  while (next < today) {
+    if (order.frequency === "weekly") {
+      next.setDate(next.getDate() + 7);
+    } else {
+      const day = next.getDate();
+      next.setDate(1);
+      next.setMonth(next.getMonth() + 1);
+      const lastDay = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+      next.setDate(Math.min(day, lastDay));
+    }
+  }
+  return next;
+}
+
+function standingOrderGoalKey(goal, index) {
+  return `goal-${goal.id || goal.createdAt || `legacy-${index}`}`;
+}
+
 function renderInvestments() {
+  if (!hasPlanAccess("Gold")) {
+    const content = `<div class="workspace-heading"><div><p class="workspace-label">Gold / Investments</p><h1>Explore markets</h1><p class="page-subtitle">Markets and Vault Prime funds are available with Gold.</p></div></div>
+      <section class="tier-locked-card"><span class="locked-emblem">${icons.chart}</span><div><p>Gold Exclusive</p><h2>Unlock Vault Prime</h2><span>Upgrade to Gold to access money market funds and global market tools.</span></div><button class="button button-primary" data-action="manage-plan" data-plan="Gold">Explore Gold ${icons.arrow}</button></section>`;
+    dashboardLayout("dashboard/investments", "Investments", content);
+    bindDashboardActions();
+    return;
+  }
   const state = getVaultState();
   const popular = [
     ["AA", "Apple Inc.", "Stock", "$173.5", "+1.24%", "Stocks", "AAPL"],
@@ -592,8 +753,8 @@ function renderTransactions() {
 }
 
 function renderSettings() {
-  const profile = getProfile() || { name: "Vault Member", email: "member@vault.com", phone: "", plan: "Gold" };
-  const plan = profile.plan || "Gold";
+  const profile = getProfile() || { name: currentUser?.displayName || "Vault Member", email: currentUser?.email || "", phone: "", plan: "Basic" };
+  const plan = profile.plan || "Basic";
   const content = `
     <div class="workspace-heading"><div><p class="workspace-label">Workspace</p><h1>Configuration</h1><p class="page-subtitle">Settings</p></div></div>
     <div class="settings-grid"><div class="settings-column">
@@ -603,7 +764,7 @@ function renderSettings() {
       </section>
       <section class="settings-card"><div class="settings-heading"><span class="section-icon">${icons.shield}</span><h2>Security</h2></div><div class="security-setting"><div><strong>Password</strong><p>Manage your secure entry key</p></div><button class="button button-secondary" data-action="update-password">Update Password</button></div></section>
     </div>
-    <div class="settings-column"><section class="settings-card plan-card-settings"><div class="settings-heading"><span class="section-icon">${icons.chart}</span><h2>Your Plan</h2></div><span class="plan-pill">${escapeHtml(plan)} account</span><p>You have access to Vault features available in the ${escapeHtml(plan)} plan.</p><button class="button button-secondary settings-button" data-action="manage-plan">Manage Subscription</button></section><button class="logout-card" data-action="logout">${icons.close}Logout</button></div></div>`;
+    <div class="settings-column"><section class="settings-card plan-card-settings"><div class="settings-heading"><span class="section-icon">${icons.chart}</span><h2>Your Plan</h2></div><span class="plan-pill">${escapeHtml(plan)} account</span><p>${plan === "Premium" ? "You have access to Savings and Standing Orders. Upgrade to Gold for Investments." : plan === "Gold" ? "You have access to Savings, Standing Orders, Investments, and Vault Prime funds." : "You have access to savings essentials. Upgrade to Premium for Standing Orders, or Gold for Investments."}</p><button class="button button-secondary settings-button" data-action="manage-plan">Manage Subscription</button></section><button class="logout-card" data-action="logout">${icons.close}Logout</button></div></div>`;
   dashboardLayout("dashboard/settings", "Settings", content);
   bindDashboardActions();
 }
@@ -642,8 +803,86 @@ function bindDashboardActions() {
   app.querySelectorAll("[data-action='invest']").forEach((button) => button.addEventListener("click", () => openInvestDialog(funds[Number(app.dataset.selectedFund) || 0])));
   app.querySelectorAll("[data-action='edit-profile']").forEach((button) => button.addEventListener("click", openProfileDialog));
   app.querySelectorAll("[data-action='update-password']").forEach((button) => button.addEventListener("click", openPasswordDialog));
-  app.querySelectorAll("[data-action='manage-plan']").forEach((button) => button.addEventListener("click", openPlanDialog));
+  app.querySelectorAll("[data-action='manage-plan']").forEach((button) => button.addEventListener("click", () => openPlanDialog(button.dataset.plan)));
+  app.querySelectorAll("[data-action='create-standing-order']").forEach((button) => button.addEventListener("click", openStandingOrderDialog));
+  app.querySelectorAll("[data-order-toggle]").forEach((button) => button.addEventListener("click", () => toggleStandingOrder(button.dataset.orderToggle)));
+  app.querySelectorAll("[data-order-delete]").forEach((button) => button.addEventListener("click", () => confirmDeleteStandingOrder(button.dataset.orderDelete)));
   app.querySelectorAll("[data-toast]").forEach((button) => button.addEventListener("click", () => notify(button.dataset.toast)));
+}
+
+function openStandingOrderDialog() {
+  if (!hasPlanAccess("Premium")) {
+    notify("Standing Orders are available with Premium.");
+    return;
+  }
+  const state = getVaultState();
+  const destinations = state.goals.map((goal, index) => `<option value="${escapeHtml(standingOrderGoalKey(goal, index))}">Savings goal · ${escapeHtml(goal.name)}</option>`).join("");
+  const { host } = openDialog("Create Standing Order", `<form class="dialog-form standing-order-form">
+    <label>Schedule name<input name="name" placeholder="e.g. Monthly savings" required minlength="2" maxlength="48" /></label>
+    <label>Amount (KSh)<input name="amount" type="number" min="1" step="1" inputmode="numeric" placeholder="e.g. 5,000" required /></label>
+    <div class="standing-form-row">
+      <label>Frequency<select name="frequency"><option value="monthly">Monthly</option><option value="weekly">Weekly</option></select></label>
+      <label>First run<input name="startDate" type="date" min="${localDateKey()}" value="${localDateKey()}" required /></label>
+    </div>
+    <label>Destination<select name="destination"><option value="wallet">General wallet</option>${destinations}</select></label>
+    <p class="dialog-note">This saves a schedule in this browser only. It will not move or charge money automatically.</p>
+    <p class="form-message" role="alert"></p>
+    <button class="button button-primary" type="submit">Save schedule</button>
+  </form>`, (event, form, modal, close) => {
+    event.preventDefault();
+    if (!form.reportValidity()) return;
+    const data = new FormData(form);
+    const name = String(data.get("name")).trim();
+    const amount = Number(data.get("amount"));
+    const startDate = String(data.get("startDate"));
+    const destination = String(data.get("destination"));
+    if (name.length < 2) return showFormError(form.querySelector(".form-message"), "Give this schedule a name.");
+    if (!Number.isSafeInteger(amount) || amount <= 0) return showFormError(form.querySelector(".form-message"), "Enter a whole amount greater than zero.");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || new Date(`${startDate}T00:00:00`).getTime() < new Date(`${localDateKey()}T00:00:00`).getTime()) {
+      return showFormError(form.querySelector(".form-message"), "Choose today or a future date for the first run.");
+    }
+    if (destination.startsWith("goal-") && !state.goals.some((goal, index) => standingOrderGoalKey(goal, index) === destination)) {
+      return showFormError(form.querySelector(".form-message"), "Choose a savings goal that is still available.");
+    }
+    state.standingOrders.push({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name,
+      amount,
+      frequency: String(data.get("frequency")),
+      startDate,
+      destination,
+      active: true,
+    });
+    if (!saveVaultState(state)) return;
+    close();
+    render();
+    notify("Standing order schedule saved.");
+  });
+}
+
+function toggleStandingOrder(id) {
+  const state = getVaultState();
+  const order = state.standingOrders.find((item) => String(item.id) === id);
+  if (!order) return notify("This standing order is no longer available.");
+  order.active = !order.active;
+  if (!saveVaultState(state)) return;
+  render();
+  notify(`Standing order ${order.active ? "resumed" : "paused"}.`);
+}
+
+function confirmDeleteStandingOrder(id) {
+  const order = getVaultState().standingOrders.find((item) => String(item.id) === id);
+  if (!order) return notify("This standing order is no longer available.");
+  const { host, close } = openDialog("Delete standing order?", `<p class="dialog-note">“${escapeHtml(order.name)}” will be removed from this browser.</p><div class="dialog-actions"><button class="button button-secondary" type="button" data-cancel>Keep schedule</button><button class="button delete-confirm" type="button" data-confirm-delete>Delete schedule</button></div>`);
+  host.querySelector("[data-cancel]").addEventListener("click", close);
+  host.querySelector("[data-confirm-delete]").addEventListener("click", () => {
+    const state = getVaultState();
+    state.standingOrders = state.standingOrders.filter((item) => String(item.id) !== id);
+    if (!saveVaultState(state)) return;
+    close();
+    render();
+    notify("Standing order deleted.");
+  });
 }
 
 function openDialog(title, body, onSubmit) {
@@ -688,7 +927,7 @@ function openGoalDialog() {
       }
     }
     const state = getVaultState();
-    state.goals.push({ name: String(data.get("name")).trim(), target: Number(data.get("target")), saved: 0, photo, createdAt: new Date().toISOString() });
+    state.goals.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name: String(data.get("name")).trim(), target: Number(data.get("target")), saved: 0, photo, createdAt: new Date().toISOString() });
     if (!saveVaultState(state)) return;
     close();
     render();
@@ -841,15 +1080,20 @@ function openInvestDialog(fund) {
 }
 
 function openProfileDialog() {
-  const profile = getProfile() || { name: "", phone: "", email: "" };
-  const { host } = openDialog("Edit Profile", `<form class="dialog-form"><label>Full Name<input name="name" value="${escapeHtml(profile.name || "")}" placeholder="Enter your full name" required minlength="2" /></label><label>Phone Number<input name="phone" value="${escapeHtml(profile.phone || "")}" placeholder="Enter your phone number" /></label><p class="form-message" role="alert"></p><div class="dialog-actions"><button class="button button-secondary" type="button" data-cancel>Cancel</button><button class="button button-primary" type="submit">Save Changes</button></div></form>`, (event, form, host, close) => {
+  const profile = getProfile() || { name: currentUser?.displayName || "", phone: "", email: currentUser?.email || "" };
+  const { host } = openDialog("Edit Profile", `<form class="dialog-form"><label>Full Name<input name="name" value="${escapeHtml(profile.name || "")}" placeholder="Enter your full name" required minlength="2" /></label><label>Phone Number<input name="phone" value="${escapeHtml(profile.phone || "")}" placeholder="Enter your phone number" /></label><p class="form-message" role="alert"></p><div class="dialog-actions"><button class="button button-secondary" type="button" data-cancel>Cancel</button><button class="button button-primary" type="submit">Save Changes</button></div></form>`, async (event, form, host, close) => {
     event.preventDefault();
     if (!form.reportValidity()) return;
     const data = new FormData(form);
+    const name = String(data.get("name")).trim();
     try {
-      localStorage.setItem(storageKey, JSON.stringify({ ...profile, name: String(data.get("name")).trim(), phone: String(data.get("phone")).trim() }));
-    } catch {
-      return showFormError(form.querySelector(".form-message"), "Your browser couldn't save this profile update.");
+      await updateProfile(currentUser, { displayName: name });
+      saveProfile({ ...profile, name, phone: String(data.get("phone")).trim() });
+    } catch (error) {
+      console.error("Could not update the account profile", error);
+      return showFormError(form.querySelector(".form-message"), error instanceof DOMException && error.name === "QuotaExceededError"
+        ? "Your browser storage is full. Clear some space and try again."
+        : "Your profile couldn't be updated. Please try again.");
     }
     close();
     render();
@@ -859,37 +1103,37 @@ function openProfileDialog() {
 }
 
 function openPasswordDialog() {
-  const { host } = openDialog("Update Password", `<form class="dialog-form"><label>Current Password<input name="current" type="password" autocomplete="current-password" required /></label><label>New Password<input name="next" type="password" autocomplete="new-password" minlength="8" required /><small>Use at least 8 characters. Passwords are hashed and stored only in this browser.</small></label><label>Confirm New Password<input name="confirm" type="password" autocomplete="new-password" minlength="8" required /></label><p class="form-message" role="alert"></p><div class="dialog-actions"><button class="button button-secondary" type="button" data-cancel>Cancel</button><button class="button button-primary" type="submit">Update Password</button></div></form>`, async (event, form, modal, close) => {
+  const { host } = openDialog("Update Password", `<form class="dialog-form"><label>Current Password<input name="current" type="password" autocomplete="current-password" required /></label><label>New Password<input name="next" type="password" autocomplete="new-password" minlength="8" required /><small>Use at least 8 characters.</small></label><label>Confirm New Password<input name="confirm" type="password" autocomplete="new-password" minlength="8" required /></label><p class="form-message" role="alert"></p><div class="dialog-actions"><button class="button button-secondary" type="button" data-cancel>Cancel</button><button class="button button-primary" type="submit">Update Password</button></div></form>`, async (event, form, modal, close) => {
     event.preventDefault();
     if (!form.reportValidity()) return;
     const data = new FormData(form);
     const message = form.querySelector(".form-message");
-    const profile = getProfile();
     if (data.get("next") !== data.get("confirm")) return showFormError(message, "New passwords do not match.");
-    if (!profile?.passwordSalt || !profile?.passwordHash) return showFormError(message, "This account has no password. Create an account to set a new password.");
+    if (!currentUser?.email) return showFormError(message, "Password updates require an email/password account.");
     try {
-      const currentHash = await hashPassword(String(data.get("current")), profile.passwordSalt);
-      if (!passwordsMatch(currentHash, profile.passwordHash)) return showFormError(message, "Your current password is incorrect.");
-      const passwordSalt = createPasswordSalt();
-      const passwordHash = await hashPassword(String(data.get("next")), passwordSalt);
-      localStorage.setItem(storageKey, JSON.stringify({ ...profile, passwordSalt, passwordHash }));
+      const credential = EmailAuthProvider.credential(currentUser.email, String(data.get("current")));
+      await reauthenticateWithCredential(currentUser, credential);
+      await updatePassword(currentUser, String(data.get("next")));
       close();
       notify("Password updated.");
-    } catch {
-      showFormError(message, "Secure password processing or browser storage failed. Please try again.");
+    } catch (error) {
+      console.error("Firebase password update failed", error);
+      showFormError(message, firebaseAuthErrorMessage(error, "Password update"));
     }
   });
   host.querySelector("[data-cancel]").addEventListener("click", () => host.querySelector(".modal-close").click());
 }
 
-function openPlanDialog() {
-  const profile = getProfile() || { name: "Vault Member", email: "member@vault.com", plan: "Gold" };
-  const { host } = openDialog("Manage Subscription", `<form class="dialog-form"><label>Select Plan<select name="plan">${["Basic", "Premium", "Gold"].map((plan) => `<option ${plan === profile.plan ? "selected" : ""}>${plan}</option>`).join("")}</select></label><div class="plan-choices"><article><strong>Basic</strong><span>Secure deposits · Global withdrawals</span></article><article><strong>Premium</strong><span>Custom goals · Standing orders</span></article><article><strong>Gold</strong><span>Premium access · Money market funds</span></article></div><p class="dialog-note">Plan changes only update your local profile.</p><p class="form-message" role="alert"></p><div class="dialog-actions"><button class="button button-secondary" type="button" data-cancel>Cancel</button><button class="button button-primary" type="submit">Save Plan</button></div></form>`, (event, form, host, close) => {
+function openPlanDialog(suggestedPlan) {
+  const profile = getProfile() || { name: currentUser?.displayName || "Vault Member", email: currentUser?.email || "", plan: "Basic" };
+  const selectedPlan = ["Basic", "Premium", "Gold"].includes(suggestedPlan) ? suggestedPlan : profile.plan;
+  const { host } = openDialog("Manage Subscription", `<form class="dialog-form"><label>Select Plan<select name="plan">${["Basic", "Premium", "Gold"].map((plan) => `<option ${plan === selectedPlan ? "selected" : ""}>${plan}</option>`).join("")}</select></label><div class="plan-choices"><article><strong>Basic</strong><span>Secure deposits · Savings essentials</span></article><article><strong>Premium</strong><span>Custom goals · Standing orders</span></article><article><strong>Gold</strong><span>Everything in Premium · Investments</span></article></div><p class="dialog-note">Plan changes only update your local profile.</p><p class="form-message" role="alert"></p><div class="dialog-actions"><button class="button button-secondary" type="button" data-cancel>Cancel</button><button class="button button-primary" type="submit">Save Plan</button></div></form>`, (event, form, host, close) => {
     event.preventDefault();
     const data = new FormData(form);
     try {
-      localStorage.setItem(storageKey, JSON.stringify({ ...profile, plan: String(data.get("plan")) }));
-    } catch {
+      saveProfile({ ...profile, plan: String(data.get("plan")) });
+    } catch (error) {
+      console.error("Could not save the selected account plan", error);
       return showFormError(form.querySelector(".form-message"), "Your browser couldn't save this plan update.");
     }
     close();
@@ -958,17 +1202,53 @@ function notify(text) {
 function render() {
   document.querySelector(".toast")?.remove();
   const route = window.location.hash.replace(/^#\/?/, "").split("?")[0];
+  app.classList.remove("is-visible");
+  if (!route.startsWith("dashboard")) delete document.documentElement.dataset.plan;
   if (route === "login" || route === "register") renderAuth(route);
   else if (route.startsWith("dashboard")) {
-    if (localStorage.getItem(sessionKey) !== "active" || !getProfile()) {
+    if (!authInitialized) return;
+    if (!currentUser) {
       window.location.hash = "/login";
       return;
     }
     renderDashboard();
   }
   else renderLanding();
+  requestAnimationFrame(() => {
+    app.classList.add("is-visible");
+  });
   applyTheme(document.documentElement.dataset.theme);
 }
+
+onAuthStateChanged(auth, (user) => {
+  currentUser = user;
+  authInitialized = true;
+  if (authActionInProgress) return;
+
+  let profileError = null;
+  if (user) {
+    try {
+      ensureUserProfile(user);
+    } catch (error) {
+      console.error("Could not initialize the signed-in account profile", error);
+      profileError = error;
+    }
+    const route = window.location.hash.replace(/^#\/?/, "").split("?")[0];
+    if (route === "login" || route === "register") {
+      window.location.hash = "/dashboard";
+      return;
+    }
+  }
+  const route = window.location.hash.replace(/^#\/?/, "").split("?")[0];
+  if (!user && !route.startsWith("dashboard")) return;
+  render();
+  if (profileError) notify("You’re signed in, but your local profile could not be saved.");
+}, (error) => {
+  authInitialized = true;
+  console.error("Firebase could not restore the signed-in session", error);
+  notify("Firebase could not restore your sign-in. Please refresh and try again.");
+  render();
+});
 
 window.addEventListener("hashchange", render);
 app.addEventListener("click", (event) => {
