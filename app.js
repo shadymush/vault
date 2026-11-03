@@ -60,8 +60,12 @@ const icons = {
   moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.9 13A9 9 0 0 1 11 3.1 9 9 0 1 0 20.9 13Z"/></svg>',
 };
 
-function brand() {
-  return `<a class="brand" href="#/" aria-label="Vault home"><span class="brand-mark"><svg viewBox="0 0 40 40" aria-hidden="true"><path class="brand-v" d="M9 8 19 32 29 8"/><path class="brand-bolt" d="m22 13-7 11h6l-2 7 8-12h-6l1-6Z"/></svg></span><span>VAULT</span></a>`;
+function brandMarkSvg() {
+  return '<svg viewBox="0 0 40 40" aria-hidden="true"><path class="brand-v" d="M9 8 19 32 29 8"/><path class="brand-bolt" d="m22 13-7 11h6l-2 7 8-12h-6l1-6Z"/></svg>';
+}
+
+function brand(href = "#/", label = "Vault home") {
+  return `<a class="brand" href="${href}" aria-label="${label}"><span class="brand-mark">${brandMarkSvg()}</span><span>VAULT</span></a>`;
 }
 
 function themeToggle() {
@@ -452,6 +456,201 @@ function stateStorageKey(user = currentUser) {
   return user ? `${stateKey}:${user.uid}` : stateKey;
 }
 
+let guideOpen = false;
+let guideMessages = [];
+
+function guideWidget() {
+  if (!guideMessages.length) {
+    guideMessages.push({
+      role: "assistant",
+      text: "Hey, I'm your Vault Guide. Ask me about your savings dashboard, or pick a starting point below.",
+    });
+  }
+  return `
+    <aside class="guide-widget${guideOpen ? " is-open" : ""}" aria-label="Vault Guide chat">
+      <section class="guide-panel" id="guide-panel" aria-label="Vault Guide conversation" ${guideOpen ? "" : "hidden"}>
+        <header class="guide-header">
+          <div class="guide-avatar" aria-hidden="true"><span>${brandMarkSvg()}</span><i></i></div>
+          <div class="guide-heading"><strong>Vault Guide</strong><span><i></i> Here when you need me</span></div>
+          <span class="guide-preview-tag">PREVIEW</span>
+          <button class="guide-collapse" type="button" data-guide-collapse aria-label="Minimize Vault Guide">${icons.down}</button>
+        </header>
+        <div class="guide-intro"><span class="guide-intro-kicker">YOUR MONEY, YOUR MOVE</span><p>A little clarity can make a big goal feel closer.</p></div>
+        <div class="guide-messages" data-guide-messages role="log" aria-live="polite" aria-relevant="additions"></div>
+        <div class="guide-prompts" data-guide-prompts aria-label="Suggested questions">
+          <button type="button" data-guide-prompt="Show me my savings progress">My progress <span>↗</span></button>
+          <button type="button" data-guide-prompt="Help me plan weekly savings for a goal">Plan a weekly save <span>↗</span></button>
+          <button type="button" data-guide-prompt="What can you help me with?">What can you do? <span>↗</span></button>
+        </div>
+        <form class="guide-composer" data-guide-form>
+          <label class="sr-only" for="guide-input">Message Vault Guide</label>
+          <input id="guide-input" name="message" maxlength="500" placeholder="Message Vault Guide..." autocomplete="off" enterkeyhint="send" required />
+          <button type="submit" aria-label="Send message">${icons.send}</button>
+        </form>
+        <p class="guide-disclaimer">${icons.shield} Guided preview · no live AI · browser-saved demo data only</p>
+      </section>
+      <button class="guide-launcher" type="button" data-guide-toggle aria-expanded="${guideOpen}" aria-controls="guide-panel" aria-label="${guideOpen ? "Minimize" : "Open"} Vault Guide">
+        <span class="guide-launcher-orb">${brandMarkSvg()}</span><span class="guide-launcher-copy"><strong>Vault Guide</strong><small>Let’s make a plan</small></span><span class="guide-launcher-chevron">${guideOpen ? icons.down : icons.arrow}</span>
+      </button>
+    </aside>`;
+}
+
+function bindGuideWidget() {
+  const widget = app.querySelector(".guide-widget");
+  if (!widget) return;
+  const panel = widget.querySelector(".guide-panel");
+  const launcher = widget.querySelector("[data-guide-toggle]");
+  const messageList = widget.querySelector("[data-guide-messages]");
+  const promptList = widget.querySelector("[data-guide-prompts]");
+  const form = widget.querySelector("[data-guide-form]");
+  const input = widget.querySelector("#guide-input");
+  const sendButton = form.querySelector('button[type="submit"]');
+  let replyPending = false;
+
+  const renderMessages = () => {
+    messageList.innerHTML = guideMessages.map(({ role, text }) => `
+      <div class="guide-message guide-message-${role}">
+        ${role === "assistant" ? `<span class="guide-message-avatar" aria-hidden="true">${brandMarkSvg()}</span>` : ""}
+        <p>${escapeHtml(text).replace(/\n/g, "<br>")}</p>
+      </div>`).join("");
+    promptList.hidden = guideMessages.length > 1;
+    messageList.scrollTop = messageList.scrollHeight;
+  };
+  const scrollToLatest = () => {
+    requestAnimationFrame(() => {
+      messageList.scrollTo({
+        top: messageList.scrollHeight,
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      });
+    });
+  };
+  const appendMessage = ({ role, text }) => {
+    messageList.insertAdjacentHTML("beforeend", `
+      <div class="guide-message guide-message-${role} guide-message-entering">
+        ${role === "assistant" ? `<span class="guide-message-avatar" aria-hidden="true">${brandMarkSvg()}</span>` : ""}
+        <p>${escapeHtml(text).replace(/\n/g, "<br>")}</p>
+      </div>`);
+    promptList.hidden = guideMessages.length > 1;
+    scrollToLatest();
+    return messageList.lastElementChild;
+  };
+  const trimMessages = () => {
+    while (guideMessages.length > 31) {
+      guideMessages.splice(1, 1);
+      messageList.querySelectorAll(".guide-message:not(.guide-typing)")[1]?.remove();
+    }
+  };
+  const setOpen = (open) => {
+    guideOpen = open;
+    widget.classList.toggle("is-open", open);
+    panel.hidden = !open;
+    launcher.setAttribute("aria-expanded", String(open));
+    launcher.setAttribute("aria-label", `${open ? "Minimize" : "Open"} Vault Guide`);
+    launcher.querySelector(".guide-launcher-chevron").innerHTML = open ? icons.down : icons.arrow;
+    if (open) {
+      input.focus();
+    } else {
+      launcher.focus();
+    }
+  };
+  const sendMessage = (text) => {
+    const message = text.trim();
+    if (!message || replyPending) return false;
+
+    guideMessages.push({ role: "user", text: message });
+    appendMessage(guideMessages[guideMessages.length - 1]);
+    trimMessages();
+
+    const accountId = currentUser?.uid;
+    const reply = guideReply(message);
+    const typing = document.createElement("div");
+    typing.className = "guide-message guide-message-assistant guide-message-entering guide-typing";
+    typing.setAttribute("role", "status");
+    typing.setAttribute("aria-label", "Vault Guide is responding");
+    typing.innerHTML = `<span class="guide-message-avatar" aria-hidden="true">${brandMarkSvg()}</span><p aria-hidden="true"><i></i><i></i><i></i></p>`;
+    messageList.append(typing);
+    messageList.setAttribute("aria-busy", "true");
+    scrollToLatest();
+
+    replyPending = true;
+    sendButton.disabled = true;
+    promptList.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+    window.setTimeout(() => {
+      typing.remove();
+      messageList.removeAttribute("aria-busy");
+      if (currentUser?.uid !== accountId) return;
+
+      guideMessages.push({ role: "assistant", text: reply });
+      appendMessage(guideMessages[guideMessages.length - 1]);
+      trimMessages();
+      replyPending = false;
+      sendButton.disabled = false;
+      promptList.querySelectorAll("button").forEach((button) => { button.disabled = false; });
+      if (guideOpen && widget.isConnected) input.focus();
+    }, window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 460);
+    return true;
+  };
+
+  renderMessages();
+  launcher.addEventListener("click", () => setOpen(!guideOpen));
+  widget.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && guideOpen) setOpen(false);
+  });
+  widget.querySelector("[data-guide-collapse]").addEventListener("click", () => setOpen(false));
+  promptList.querySelectorAll("[data-guide-prompt]").forEach((button) => {
+    button.addEventListener("click", () => {
+      sendMessage(button.dataset.guidePrompt || "");
+    });
+  });
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (sendMessage(input.value)) {
+      form.reset();
+      input.focus();
+    }
+  });
+}
+
+function guideReply(question) {
+  const query = question.toLowerCase();
+  const state = getVaultState();
+  const goals = state.goals;
+  const profile = getProfile();
+
+  if (/what can you|what do you|hello|hi\b/.test(query)) {
+    return "I can help you read your savings dashboard, think through a goal, or map out a saving rhythm. Try a suggestion below—or ask in your own words. I'm a guided preview, so I don't have live AI answers yet.";
+  }
+  if (/balance|wallet|how much.*saved|total savings/.test(query)) {
+    return `Your demo wallet currently shows ${money(state.balance)}. That figure is stored in this browser only; it isn't a bank balance or independently verified record.`;
+  }
+  if (/week|weekly|month|monthly|plan|save/.test(query)) {
+    if (goals.length) {
+      const nextGoal = goals[0];
+      const remaining = Math.max(0, (Number(nextGoal.target) || 0) - (Number(nextGoal.saved) || 0));
+      return `For ${nextGoal.name}, ${money(remaining)} remains in the current browser-saved goal. To calculate a meaningful weekly amount, choose a target date first—the goal doesn't include one yet. I won't guess a deadline for you.`;
+    }
+    return "Let's start with a goal and a target date. Create a goal in Hazina (Savings); once a deadline is part of your plan, contribution amounts can be calculated from the numbers you choose.";
+  }
+  if (/progress|goal|target|on track/.test(query)) {
+    if (!goals.length) return "There aren't any goals in this browser yet. Create one in Hazina (Savings), then come back and ask me about your progress.";
+    const summaries = goals.slice(0, 3).map((goal) => {
+      const target = Number(goal.target) || 0;
+      const saved = Number(goal.saved) || 0;
+      const remaining = Math.max(0, target - saved);
+      const percent = target ? Math.min(100, Math.round((saved / target) * 100)) : 0;
+      return `${goal.name}: ${percent}% complete, ${money(remaining)} to go.`;
+    });
+    return `Here's what your browser-saved goals show:\n${summaries.join("\n")}\nThese are local demo records, not verified financial data.`;
+  }
+  if (/invest|stock|market|share|gold/.test(query)) {
+    return "This preview doesn't have live market news or prices, and it won't give buy/sell instructions. Gold market information in the app may be sample data; always check a dated, licensed source.";
+  }
+  if (/premium|standing order|subscription/.test(query)) {
+    return `Your account is on the ${profile?.plan || "Basic"} plan. Standing Orders are a Premium feature. You can review your plan in Settings; plan changes here are currently saved only in this browser.`;
+  }
+  return "I hear you. I'm a guided visual preview, not a live AI assistant yet. I can show browser-saved progress, explain the demo plans, or help you think through what information a savings plan needs.";
+}
+
 function money(amount) {
   return `KSh ${Number(amount || 0).toLocaleString("en-KE", { maximumFractionDigits: 2 })}`;
 }
@@ -474,7 +673,7 @@ function dashboardLayout(route, title, content) {
   app.innerHTML = `
     <main class="dashboard">
       <header class="vault-header">
-        <div class="vault-header-inner">${brand()}<div class="header-controls">${themeToggle()}<button class="menu-toggle" type="button" aria-label="Open navigation menu" aria-expanded="false">${icons.menu}</button></div></div>
+        <div class="vault-header-inner">${brand("#/dashboard", "Dashboard home")}<div class="header-controls">${themeToggle()}<button class="menu-toggle" type="button" aria-label="Open navigation menu" aria-expanded="false">${icons.menu}</button></div></div>
         <nav class="vault-nav" aria-label="Dashboard navigation" hidden>
           ${navItems.map(([path, label, icon]) => `<a href="#/${path}" ${route === path ? 'aria-current="page"' : ""}>${icon}${label}</a>`).join("")}
           <a href="#/" data-action="logout">${icons.close}Logout</a>
@@ -482,7 +681,6 @@ function dashboardLayout(route, title, content) {
       </header>
       <div class="dashboard-shell">
         <aside class="dashboard-sidebar">
-          ${brand()}
           <p class="nav-label">Workspace</p>
           <nav class="side-nav" aria-label="Dashboard">
             ${navItems.map(([path, label, icon]) => {
@@ -501,7 +699,9 @@ function dashboardLayout(route, title, content) {
           <div class="dashboard-page">${content}</div>
         </section>
       </div>
+      ${guideWidget()}
     </main>`;
+  bindGuideWidget();
   const menuToggle = app.querySelector(".menu-toggle");
   const mobileNav = app.querySelector(".vault-nav");
   menuToggle.addEventListener("click", () => {
@@ -1281,6 +1481,10 @@ function render() {
 }
 
 onAuthStateChanged(auth, (user) => {
+  if (currentUser?.uid !== user?.uid) {
+    guideMessages = [];
+    guideOpen = false;
+  }
   currentUser = user;
   authInitialized = true;
   if (authActionInProgress) return;
