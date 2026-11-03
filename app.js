@@ -3,11 +3,14 @@ import {
   browserLocalPersistence,
   createUserWithEmailAndPassword,
   EmailAuthProvider,
+  getAdditionalUserInfo,
   getAuth,
+  GoogleAuthProvider,
   onAuthStateChanged,
   reauthenticateWithCredential,
   setPersistence,
   signInWithEmailAndPassword,
+  signInWithPopup,
   signOut,
   updatePassword,
   updateProfile,
@@ -167,12 +170,19 @@ function renderAuth(mode) {
           <p class="form-message" role="alert"></p>
           <button class="button button-primary auth-submit" type="submit">${registering ? "Continue to Vault" : "Sign In"}</button>
         </form>
+        <div class="auth-divider"><span>or continue with</span></div>
+        <button class="button button-secondary google-signin" type="button" data-action="google-signin">
+          <svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5Z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.93c-.58 2.96-2.27 5.48-4.75 7.18l7.73 6C44.42 37.85 46.98 31.7 46.98 24.55Z"/><path fill="#FBBC05" d="M10.53 28.59A14.4 14.4 0 0 1 9.75 24c0-1.59.27-3.13.76-4.59l-7.98-6.19A23.9 23.9 0 0 0 0 24c0 3.87.93 7.54 2.56 10.78l7.97-6.19Z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.91-5.8l-7.73-6c-2.14 1.44-4.89 2.3-8.18 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48Z"/></svg>
+          Continue with Google
+        </button>
         <p class="auth-switch">${registering ? 'Already have an account? <a class="text-link" href="#/login">Login</a>' : 'Don’t have an account? <a class="text-link" href="#/register">Register</a>'}</p>
         <p class="account-note">Sign-in is securely managed by Firebase. Your plan and dashboard data are currently stored in this browser.</p>
       </section>
     </main>`;
 
   const form = document.querySelector("#auth-form");
+  const message = form.querySelector(".form-message");
+  const googleButton = app.querySelector("[data-action='google-signin']");
   const password = document.querySelector("#password");
   const toggle = document.querySelector(".password-toggle");
   toggle.addEventListener("click", () => {
@@ -184,7 +194,6 @@ function renderAuth(mode) {
   });
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const message = form.querySelector(".form-message");
     const submit = form.querySelector("[type='submit']");
     message.classList.remove("visible");
     if (!form.reportValidity()) return;
@@ -236,6 +245,48 @@ function renderAuth(mode) {
     } finally {
       authActionInProgress = false;
       submit.disabled = false;
+    }
+  });
+  googleButton.addEventListener("click", async () => {
+    message.classList.remove("visible");
+    googleButton.disabled = true;
+    let firebaseAuthSucceeded = false;
+    try {
+      await setPersistence(auth, browserLocalPersistence);
+      authActionInProgress = true;
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: "select_account" });
+      const result = await signInWithPopup(auth, provider);
+      currentUser = result.user;
+      firebaseAuthSucceeded = true;
+      const additionalInfo = getAdditionalUserInfo(result);
+      if (additionalInfo?.isNewUser) {
+        saveProfile({
+          name: result.user.displayName || result.user.email?.split("@")[0] || "Vault Member",
+          email: result.user.email || "",
+          phone: result.user.phoneNumber || "",
+          plan: registering ? String(new FormData(form).get("plan") || "Basic") : "Basic",
+        }, result.user);
+      } else {
+        ensureUserProfile(result.user);
+      }
+      window.location.hash = "/dashboard";
+    } catch (error) {
+      console.error("Firebase Google sign-in failed", error);
+      if (firebaseAuthSucceeded && currentUser) {
+        try {
+          ensureUserProfile(currentUser);
+        } catch (profileError) {
+          console.error("Could not save the Google account profile", profileError);
+        }
+        window.location.hash = "/dashboard";
+        notify("You’re signed in, but some profile details could not be saved in this browser.");
+      } else {
+        showFormError(message, firebaseAuthErrorMessage(error, "Google sign in"));
+      }
+    } finally {
+      authActionInProgress = false;
+      googleButton.disabled = false;
     }
   });
 }
@@ -296,12 +347,21 @@ function firebaseAuthErrorMessage(error, action) {
     "auth/invalid-credential": "Email or password is incorrect.",
     "auth/user-disabled": "This account has been disabled. Contact support.",
     "auth/weak-password": "Choose a stronger password with at least 8 characters.",
-    "auth/operation-not-allowed": "Email/password sign-in is disabled. Enable it in Firebase Authentication settings.",
+    "auth/operation-not-supported-in-this-environment": "Google sign-in requires a supported browser and secure connection.",
     "auth/unauthorized-domain": "This site is not authorized in Firebase. Add its domain in Firebase Authentication settings.",
+    "auth/popup-blocked": "Your browser blocked the Google sign-in window. Allow popups and try again.",
+    "auth/popup-closed-by-user": "Google sign-in was cancelled.",
+    "auth/cancelled-popup-request": "Another sign-in window is already open.",
+    "auth/account-exists-with-different-credential": "An account already exists for this email with a different sign-in method. Sign in using that method; account linking is not available yet.",
     "auth/too-many-requests": "Too many attempts. Wait a while and try again.",
     "auth/network-request-failed": "Could not reach Firebase. Check your internet connection and try again.",
     "auth/requires-recent-login": "Please sign in again before changing your password.",
   };
+  if (error?.code === "auth/operation-not-allowed") {
+    return action === "Google sign in"
+      ? "Google sign-in is disabled. Enable the Google provider in Firebase Authentication settings."
+      : "Email/password sign-in is disabled. Enable it in Firebase Authentication settings.";
+  }
   return messages[error?.code] || `${action} failed. Please try again.`;
 }
 

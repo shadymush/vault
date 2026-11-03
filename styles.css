@@ -161,6 +161,12 @@ button { color: inherit; }
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .auth-submit { width: 100%; margin-top: 6px; border-radius: 9px; font-size: 15px; }
 .auth-submit:disabled { opacity: .7; cursor: wait; }
+.auth-divider { display: flex; align-items: center; gap: 14px; margin: 20px 0; color: #858892; font-size: 12px; }
+.auth-divider::before, .auth-divider::after { height: 1px; flex: 1; background: var(--line); content: ""; }
+.google-signin { width: 100%; min-height: 50px; border-color: #3a3d43; border-radius: 9px; background: #fff; color: #202124; font-size: 14px; font-weight: 600; }
+.google-signin:hover { border-color: #c7c9cc; background: #f7f8fa; }
+.google-signin svg { width: 18px; height: 18px; flex: 0 0 auto; }
+.google-signin:disabled { opacity: .65; cursor: wait; }
 .auth-switch { margin: 22px 0 0; color: #858892; font-size: 13px; text-align: center; }
 .text-link { color: #4ab6f5; font-weight: 600; }
 .form-message { display: none; margin: 0; padding: 10px 12px; border: 1px solid #63383a; border-radius: 8px; color: #ffb8b8; background: #30191b; font-size: 12px; line-height: 1.5; }
@@ -654,6 +660,9 @@ html[data-theme="light"] .auth-title { color: #17212f; letter-spacing: -.055em; 
 html[data-theme="light"] .auth-subtitle { color: #344054; font-weight: 600; letter-spacing: -.01em; }
 html[data-theme="light"] .field label { color: #1d2939; font-weight: 650; }
 html[data-theme="light"] .auth-switch { color: #344054; font-weight: 500; }
+html[data-theme="light"] .auth-divider { color: #475467; }
+html[data-theme="light"] .google-signin { border-color: #d0d5dd; background: #fff; color: #202124; }
+html[data-theme="light"] .google-signin:hover { border-color: #b7bdc7; background: #f8fafc; }
 html[data-theme="light"] .field input, html[data-theme="light"] .field select { border-color: #cbd2dc; color: #202630; background: #f7f8fa; }
 html[data-theme="light"] .field input::placeholder { color: #475467; }
 html[data-theme="light"] .field-hint, html[data-theme="light"] .account-note { color: #475467; }
