@@ -737,6 +737,24 @@ function renderDashboard() {
   renderOverview();
 }
 
+function goalThumbnailMarkup(goal, className = "") {
+  const name = typeof goal?.name === "string" ? goal.name : "Savings goal";
+  const photo = typeof goal?.photo === "string" ? goal.photo.trim() : "";
+  const content = photo
+    ? `<img src="${escapeHtml(photo)}" alt="${escapeHtml(`${name} savings goal`)}" loading="lazy" decoding="async" /><span class="goal-thumbnail-fallback" aria-hidden="true">${icons.target}</span>`
+    : `<span class="goal-thumbnail-fallback" aria-hidden="true">${icons.target}</span>`;
+  return `<span class="goal-thumbnail${className ? ` ${escapeHtml(className)}` : ""}">${content}</span>`;
+}
+
+function bindGoalImageFallbacks(root = app) {
+  root.querySelectorAll(".goal-thumbnail > img, .goal-artwork > img").forEach((image) => {
+    image.addEventListener("error", () => {
+      image.hidden = true;
+      image.parentElement?.classList.add("is-image-missing");
+    }, { once: true });
+  });
+}
+
 function renderOverview() {
   const state = getVaultState();
   const profile = getProfile();
@@ -771,7 +789,7 @@ function renderOverview() {
         </div>
       </section>
       <section class="overview-goals panel"><div class="panel-heading"><h2>Your Targets</h2><a href="#/dashboard/savings">View all →</a></div>
-        ${goals.length ? goals.map((goal) => `<div class="goal-item"><div class="goal-head"><span>${escapeHtml(goal.name)}</span><span>${money(goal.saved)} / ${money(goal.target)}</span></div><div class="goal-track"><div class="goal-progress" style="width:${Math.min(100, goal.target ? (goal.saved / goal.target) * 100 : 0)}%"></div></div></div>`).join("") : '<p class="empty-inline">Create a savings goal and start making progress.</p>'}
+        ${goals.length ? `<div class="goal-overview-list">${goals.map((goal) => `<div class="goal-item">${goalThumbnailMarkup(goal)}<div class="goal-item-content"><div class="goal-head"><span>${escapeHtml(goal.name)}</span><span>${money(goal.saved)} / ${money(goal.target)}</span></div><div class="goal-track" role="progressbar" aria-label="${escapeHtml(goal.name)} savings progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.min(100, goal.target ? Math.round((goal.saved / goal.target) * 100) : 0)}"><div class="goal-progress" style="width:${Math.min(100, goal.target ? (goal.saved / goal.target) * 100 : 0)}%"></div></div></div></div>`).join("")}</div>` : '<p class="empty-inline">Create a savings goal and start making progress.</p>'}
       </section>
     </div>
     ${hasPlanAccess("Premium") ? `<section class="standing-preview">
@@ -789,32 +807,125 @@ function renderOverview() {
       <button class="button button-primary" type="button" data-action="manage-plan" data-plan="Gold">Explore Gold ${icons.arrow}</button>
     </section>`}`;
   dashboardLayout("dashboard", "Overview", content);
+  bindGoalImageFallbacks();
   if (hasPlanAccess("Gold")) bindFundPicker();
   bindDashboardActions();
   startCountdown();
 }
 
-function renderSavings() {
+function renderSavings(featuredIndex = 0) {
   const state = getVaultState();
-  const goalTotal = state.goals.reduce((sum, goal) => sum + Number(goal.target || 0), 0);
-  const savedTotal = state.goals.reduce((sum, goal) => sum + Number(goal.saved || 0), 0);
+  const goals = state.goals;
+  const goalTotal = goals.reduce((sum, goal) => sum + Math.max(0, Number(goal.target) || 0), 0);
+  const savedTotal = goals.reduce((sum, goal) => sum + Math.max(0, Number(goal.saved) || 0), 0);
+  const remainingTotal = Math.max(0, goalTotal - savedTotal);
   const progress = goalTotal ? Math.min(100, Math.round((savedTotal / goalTotal) * 100)) : 0;
-  const sprintComplete = state.sprintDate === localDateKey();
+  const selectedIndex = goals.length ? Math.max(0, Math.min(goals.length - 1, Number(featuredIndex) || 0)) : -1;
+  const featuredGoal = goals[selectedIndex];
+  const featuredTarget = Math.max(0, Number(featuredGoal?.target) || 0);
+  const featuredSaved = Math.max(0, Number(featuredGoal?.saved) || 0);
+  const featuredRemaining = Math.max(0, featuredTarget - featuredSaved);
+  const featuredProgress = featuredTarget ? Math.min(100, Math.round((featuredSaved / featuredTarget) * 100)) : 0;
+  const nextMilestone = [25, 50, 75, 100]
+    .map((percentage) => Math.ceil(featuredTarget * percentage / 100))
+    .find((amount) => amount > featuredSaved) || featuredTarget;
+  const defaultWeekly = 1000;
+  const defaultWeeks = featuredRemaining ? Math.ceil(featuredRemaining / defaultWeekly) : 0;
+  const defaultFinish = new Date();
+  defaultFinish.setDate(defaultFinish.getDate() + defaultWeeks * 7);
+  const finishLabel = defaultWeeks ? new Intl.DateTimeFormat("en-KE", { month: "short", year: "numeric" }).format(defaultFinish) : "";
+  const goalArtwork = (goal, featured = false) => {
+    const photo = typeof goal.photo === "string" ? goal.photo : "";
+    const photoLink = /^https:\/\//i.test(photo)
+      ? photo
+      : `https://unsplash.com/s/photos/${encodeURIComponent(goal.name)}`;
+    const image = photo
+      ? `<img src="${escapeHtml(photo)}" alt="${escapeHtml(`${goal.name} savings goal`)}" ${featured ? 'fetchpriority="high"' : 'loading="lazy"'} /><div class="goal-art-placeholder goal-art-fallback" aria-hidden="true">${icons.target}<span>Your next chapter</span></div>`
+      : `<div class="goal-art-placeholder" aria-hidden="true">${icons.target}<span>Picture what’s next</span></div>`;
+    return `<div class="goal-artwork">${image}<a href="${escapeHtml(photoLink)}" target="_blank" rel="noopener noreferrer">${photo && /^https:\/\//i.test(photo) ? "View image source" : "Find an image"} ↗</a></div>`;
+  };
   const content = `
-    <div class="workspace-heading"><div><p class="workspace-label">Finance / Savings</p><h1>Hazina</h1><p class="page-subtitle">A smarter way to build your savings.</p></div><div class="account-tier"><span></span>${state.goals.length} active goals</div></div>
-    <div class="savings-summary-grid">
-      <section class="balance-card savings-balance"><div class="balance-top"><div><p class="balance-label">Total Savings Balance</p><h2 class="balance-value"><span>KSh</span> ${state.balance.toLocaleString("en-KE")}</h2></div><div class="balance-emblem">${icons.wallet}</div></div>
-        <div class="savings-card-footer"><span class="positive-change">${icons.up} +12.5% <small>vs last month</small></span><div class="balance-actions"><button class="button button-primary" data-action="deposit">${icons.download}Deposit</button><button class="button button-secondary" data-action="withdraw">Withdraw</button></div></div>
-      </section>
-      <section class="portfolio-card"><div><p>Portfolio Progress</p><strong>${progress}%</strong><span>Done</span></div><div class="portfolio-track"><span style="width:${progress}%"></span></div><div class="global-target"><span>Global Target</span><strong>${money(goalTotal)}</strong></div></section>
+    <header class="hazina-heading">
+      <div><p class="workspace-label">HAZINA · YOUR SAVINGS STUDIO</p><h1>Give your next goal a shape.</h1><p>See what you’re saving for, choose a steady pace, and celebrate every milestone.</p></div>
+      <button class="button button-primary" type="button" data-action="create-goal">${icons.plus}New savings goal</button>
+    </header>
+    <section class="savings-scoreboard" aria-label="Savings goal totals">
+      <article><span>Saved toward goals</span><strong>${money(savedTotal)}</strong><small>${goals.length} goal${goals.length === 1 ? "" : "s"} in your plan</small></article>
+      <article><span>Combined target</span><strong>${money(goalTotal)}</strong><small>Across all your savings goals</small></article>
+      <article><span>Still to go</span><strong>${money(remainingTotal)}</strong><small>${progress}% of your combined target reached</small></article>
     </div>
-    <button class="intelligence-card" type="button" data-action="intelligence">${icons.sparkle}<span><small>Vault Intelligence</small><strong>Maximize your growth</strong><span>System suggests moving ${money(5000)} to "Emergency Fund" for better yield.</span></span>${icons.chevron}</button>
-    <div class="section-heading-row"><h2>Your Targets <span>${state.goals.length} ACTIVE</span></h2><button class="button button-primary" data-action="create-goal">${icons.plus}Create New</button></div>
-    ${state.goals.length ? `<div class="goal-list">${state.goals.map((goal, index) => `<article class="goal-list-card"><div class="goal-list-heading"><div class="goal-art">${goal.photo ? `<img src="${escapeHtml(goal.photo)}" alt="" />` : icons.target}</div><div><h3>${escapeHtml(goal.name)}</h3><p>${money(goal.saved)} saved of ${money(goal.target)}</p></div><button class="icon-button" data-action="goal-options" data-goal="${index}" aria-label="Goal options">${icons.chevron}</button></div><div class="goal-track"><div class="goal-progress" style="width:${Math.min(100, goal.target ? (goal.saved / goal.target) * 100 : 0)}%"></div></div><button class="goal-contribute" data-action="contribute" data-goal="${index}">${icons.plus} Add savings</button></article>`).join("")}</div>` : `<div class="empty-state">${icons.target}<h3>Ready to start?</h3><p>Create your first highly intelligent saving goal today.</p><button class="button button-primary" data-action="create-goal">${icons.plus}Create a saving goal</button></div>`}
-    <section class="marathon-card savings-marathon"><div class="section-title-row"><div class="section-icon">${icons.bolt}</div><div><h2>Savings Marathon</h2><p>Automated Growth Engine</p></div></div><div class="sprint-panel"><div class="sprint-heading"><p>${icons.target}Daily Sprint</p><span>Streak: ${state.streak} Days</span></div><div class="sprint-detail"><p>Save KSh 1,000 today to maintain your streak.</p><span class="countdown">${icons.clock}<span id="sprint-countdown"></span></span></div><div class="sprint-progress-label"><span>Today’s progress</span><span>${sprintComplete ? "100%" : "0%"}</span></div><div class="sprint-track"><span style="width:${sprintComplete ? "100%" : "0%"}"></span></div><button class="button complete-sprint" data-action="complete-sprint" ${sprintComplete ? "disabled" : ""}>${icons.check}${sprintComplete ? "Completed today" : "Complete Daily"}</button></div></section>`;
+    ${featuredGoal ? `
+    <section class="target-feature" aria-labelledby="featured-goal-name">
+      <div class="target-feature-visual">${goalArtwork(featuredGoal, true)}<span class="target-visual-caption">YOUR NEXT CHAPTER</span></div>
+      <div class="target-feature-content">
+        <div class="target-feature-top"><span class="target-focus-tag">${icons.sparkle} IN FOCUS</span><button type="button" class="icon-button" data-action="goal-options" data-goal="${selectedIndex}" aria-label="Goal details">${icons.chevron}</button></div>
+        <p class="target-eyebrow">THE GOAL</p><h2 id="featured-goal-name">${escapeHtml(featuredGoal.name)}</h2>
+        <div class="target-progress-copy"><strong>${money(featuredSaved)}</strong><span>of ${money(featuredTarget)}</span></div>
+        <div class="goal-track target-progress-track" role="progressbar" aria-label="${escapeHtml(featuredGoal.name)} savings progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${featuredProgress}"><div class="goal-progress" style="width:${featuredProgress}%"></div></div>
+        <div class="target-remaining"><span>${featuredRemaining ? `${money(featuredRemaining)} left to your target` : "You reached this target!"}</span><span>${featuredProgress}%</span></div>
+        <div class="target-milestone">${featuredRemaining ? `<span class="milestone-dot"></span><span>Next milestone: <strong>${money(nextMilestone)}</strong></span>` : `${icons.check}<span>Milestone unlocked</span>`}</div>
+        <button class="button button-primary target-contribute" type="button" data-action="contribute" data-goal="${selectedIndex}">${icons.plus}Add to this goal</button>
+      </div>
+    </section>
+    <section class="pace-planner" aria-labelledby="pace-title">
+      <div class="pace-intro"><span class="pace-icon">${icons.clock}</span><div><p class="target-eyebrow">MAKE IT A PLAN</p><h2 id="pace-title">Find your savings pace</h2><p>Choose a weekly amount that feels realistic. We’ll estimate the timeline.</p></div></div>
+      <div class="pace-controls"><label for="weekly-pace">I can set aside each week <span><input id="weekly-pace" type="number" min="1" step="100" value="${defaultWeekly}" inputmode="numeric" data-weekly-pace aria-describedby="pace-disclaimer" /> <small>KSh / week</small></span></label>
+        <div class="pace-estimate" aria-live="polite"><span>At this pace, your goal is about</span><strong data-pace-weeks>${defaultWeeks ? `${defaultWeeks} week${defaultWeeks === 1 ? "" : "s"}` : "already reached"}</strong><small data-pace-date>${finishLabel ? `around ${finishLabel}` : "A lovely milestone to celebrate"}</small></div>
+      </div>
+      <div class="pace-footnote"><span data-pace-monthly>About ${money(Math.round(defaultWeekly * 52 / 12))} per month</span><p id="pace-disclaimer">Contribution-only estimate: assumes no interest, fees, or changes in pace. Your goals are saved in this browser.</p></div>
+    </section>` : `
+    <section class="goalboard-empty">
+      <div class="goal-empty-orbit">${icons.target}</div><p class="target-eyebrow">START WITH THE WHY</p><h2>What are you saving for?</h2>
+      <p>Give your money a destination. Add a target amount and a photo or image link to keep the goal in sight.</p>
+      <button class="button button-primary" type="button" data-action="create-goal">${icons.plus}Create your first goal</button>
+    </section>`}
+    <section class="goalboard-section" aria-labelledby="goalboard-title">
+      <div class="goalboard-heading"><div><p class="target-eyebrow">KEEP YOUR WHY CLOSE</p><h2 id="goalboard-title">Your goalboard <span>${goals.length}</span></h2></div>${goals.length ? `<button type="button" class="text-link" data-action="create-goal">${icons.plus} Add a goal</button>` : ""}</div>
+      ${goals.length ? `<div class="goalboard-grid">${goals.map((goal, index) => {
+        const target = Math.max(0, Number(goal.target) || 0);
+        const saved = Math.max(0, Number(goal.saved) || 0);
+        const goalProgress = target ? Math.min(100, Math.round((saved / target) * 100)) : 0;
+        const goalRemaining = Math.max(0, target - saved);
+        return `<article class="goalboard-card${index === selectedIndex ? " is-featured" : ""}">
+          ${goalArtwork(goal)}
+          <div class="goalboard-card-content"><div class="goalboard-card-head"><button type="button" class="goalboard-focus" data-feature-goal="${index}" aria-pressed="${index === selectedIndex}">${index === selectedIndex ? "IN FOCUS" : "MAKE THIS THE FOCUS"}</button><button type="button" class="icon-button" data-action="goal-options" data-goal="${index}" aria-label="Details for ${escapeHtml(goal.name)}">${icons.chevron}</button></div>
+            <h3>${escapeHtml(goal.name)}</h3><div class="goalboard-card-metrics"><strong>${money(saved)}</strong><span>of ${money(target)}</span></div>
+            <div class="goal-track" role="progressbar" aria-label="${escapeHtml(goal.name)} savings progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${goalProgress}"><div class="goal-progress" style="width:${goalProgress}%"></div></div>
+            <div class="goalboard-card-footer"><span>${goalRemaining ? `${money(goalRemaining)} to go` : "Target reached"}</span><button type="button" class="goal-contribute" data-action="contribute" data-goal="${index}">${icons.plus} Add savings</button></div>
+          </div>
+        </article>`;
+      }).join("")}</div>` : '<p class="goalboard-empty-note">Your goals will appear here with their own progress and imagery.</p>'}
+    </section>`;
   dashboardLayout("dashboard/savings", "Savings", content);
+  bindGoalImageFallbacks();
   bindDashboardActions();
-  startCountdown();
+  app.querySelectorAll("[data-feature-goal]").forEach((button) => button.addEventListener("click", () => renderSavings(Number(button.dataset.featureGoal))));
+  bindSavingsPace(featuredRemaining);
+}
+
+function bindSavingsPace(remaining) {
+  const input = app.querySelector("[data-weekly-pace]");
+  if (!input) return;
+  const weeksOutput = app.querySelector("[data-pace-weeks]");
+  const dateOutput = app.querySelector("[data-pace-date]");
+  const monthlyOutput = app.querySelector("[data-pace-monthly]");
+  input.addEventListener("input", () => {
+    const weeklyAmount = Number(input.value);
+    if (!Number.isFinite(weeklyAmount) || weeklyAmount <= 0) {
+      weeksOutput.textContent = "Enter an amount above zero";
+      dateOutput.textContent = "Use a weekly amount you can sustain";
+      monthlyOutput.textContent = "Monthly estimate unavailable";
+      return;
+    }
+    const weeks = remaining ? Math.ceil(remaining / weeklyAmount) : 0;
+    const finishDate = new Date();
+    finishDate.setDate(finishDate.getDate() + weeks * 7);
+    weeksOutput.textContent = weeks ? `${weeks} week${weeks === 1 ? "" : "s"}` : "already reached";
+    dateOutput.textContent = weeks
+      ? `around ${new Intl.DateTimeFormat("en-KE", { month: "short", year: "numeric" }).format(finishDate)}`
+      : "A lovely milestone to celebrate";
+    monthlyOutput.textContent = `About ${money(Math.round(weeklyAmount * 52 / 12))} per month`;
+  });
 }
 
 function renderStandingOrders() {
@@ -1222,7 +1333,11 @@ function openGoalDetails(index) {
   const goal = getVaultState().goals[index];
   if (!goal) return notify("This savings goal is no longer available.");
   const progress = goal.target ? Math.min(100, Math.round((goal.saved / goal.target) * 100)) : 0;
-  const { host, close } = openDialog(goal.name, `<div class="goal-details"><p>${money(goal.saved)} saved of ${money(goal.target)}</p><div class="goal-track"><div class="goal-progress" style="width:${progress}%"></div></div><p>${progress}% of your target reached.</p><div class="dialog-actions"><button class="button button-secondary" type="button" data-cancel>Close</button><button class="button button-primary" type="button" data-contribute>Add savings</button></div><button class="delete-goal" type="button" data-delete>Delete goal</button></div>`);
+  const imageLink = typeof goal.photo === "string" && /^https:\/\//i.test(goal.photo)
+    ? `<a href="${escapeHtml(goal.photo)}" target="_blank" rel="noopener noreferrer">View image source ↗</a>`
+    : "";
+  const { host, close } = openDialog(goal.name, `<div class="goal-details"><div class="goal-details-visual">${goalThumbnailMarkup(goal, "goal-details-thumbnail")}${imageLink}</div><p>${money(goal.saved)} saved of ${money(goal.target)}</p><div class="goal-track"><div class="goal-progress" style="width:${progress}%"></div></div><p>${progress}% of your target reached.</p><div class="dialog-actions"><button class="button button-secondary" type="button" data-cancel>Close</button><button class="button button-primary" type="button" data-contribute>Add savings</button></div><button class="delete-goal" type="button" data-delete>Delete goal</button></div>`);
+  bindGoalImageFallbacks(host);
   host.querySelector("[data-cancel]").addEventListener("click", () => host.querySelector(".modal-close").click());
   host.querySelector("[data-contribute]").addEventListener("click", () => {
     close();
